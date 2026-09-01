@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:4000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 // Token getter — set by AuthBridge when user is authenticated
 let tokenGetter = null;
@@ -10,7 +10,7 @@ export function setTokenGetter(fn) {
 export async function fetchAPI(path, options = {}) {
   let token = null;
   if (tokenGetter) {
-    try { token = await tokenGetter(); } catch (e) { /* silent */ }
+    try { token = await tokenGetter(); } catch (e) { console.warn('[API] Token fetch failed:', e.message || e); }
   }
   const res = await fetch(`${API_URL}${path}`, {
     ...options,

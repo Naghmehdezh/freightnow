@@ -36,7 +36,10 @@ async function updateCompany(userId, data) {
   const user = await User.findById(userId);
   if (!user) throw new NotFoundError('User');
 
-  const fields = { name: data.name, country: data.country, province: data.province, city: data.city, postalCode: data.postalCode };
+  const fields = {
+    name: data.name, street: data.street, city: data.city, province: data.province,
+    postalCode: data.postalCode, country: data.country, phone: data.phone, taxNumber: data.taxNumber,
+  };
 
   if (user.company) {
     return Company.findByIdAndUpdate(user.company, fields, { new: true });

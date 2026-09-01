@@ -22,6 +22,10 @@ const userSchema = new Schema({
   phone: String,
   role: { type: String, enum: ['customer', 'company_admin', 'iff_staff', 'iff_admin'], default: 'customer' },
   company: { type: Schema.Types.ObjectId, ref: 'Company' },
+  termsAcceptedAt: Date,
+  termsAcceptedFromIp: String,
+  fedexTermsAcceptedAt: Date,
+  fedexTermsAcceptedFromIp: String,
   notifications: { type: notificationPreferenceSchema, default: () => ({}) },
 }, { timestamps: true });
 

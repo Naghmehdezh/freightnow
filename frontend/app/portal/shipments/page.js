@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { fetchAPI } from '@/lib/api';
 import s from './page.module.css';
@@ -76,8 +76,8 @@ export default function ShipmentsPage() {
               <tr><td colSpan="11" style={{ textAlign: 'center', padding: '40px 14px', color: 'var(--text3)' }}>No shipments found</td></tr>
             )}
             {filtered.map((ship, i) => (
-              <>
-                <tr key={ship.id || i}>
+              <Fragment key={ship.id || ship._id || i}>
+                <tr>
                   <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>{ship.bookingNumber || ship.booking?.bookingNumber || '—'}</td>
                   <td>{ship.tracking || ship.trackingNumber}</td>
                   <td>{ship.route || `${ship.originCity || ''} → ${ship.destCity || ''}`}</td>
@@ -91,7 +91,7 @@ export default function ShipmentsPage() {
                   <td><button className={s.btnAction} onClick={() => setExpandedRow(expandedRow === i ? null : i)}>Details</button></td>
                 </tr>
                 {expandedRow === i && (
-                  <tr key={`detail-${i}`} className={s.detailRow}>
+                  <tr className={s.detailRow}>
                     <td colSpan="11">
                       <div className={s.detailInner}>
                         <div><div className={s.detailLabel}>Origin</div><div className={s.detailValue}>{ship.origin || `${ship.originCity || ''}, ${ship.originPostal || ''}`}</div></div>
@@ -109,7 +109,7 @@ export default function ShipmentsPage() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

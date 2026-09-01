@@ -3,16 +3,17 @@ const Invoice = require('../models/Invoice');
 const Booking = require('../models/Booking');
 const { NotFoundError } = require('../utils/errors');
 
-async function getPaymentMethods(userId) {
-  return PaymentMethod.find({ user: userId }).sort({ createdAt: -1 });
+async function getPaymentMethods(companyId) {
+  return PaymentMethod.find({ company: companyId }).sort({ createdAt: -1 });
 }
 
-async function addPaymentMethod(userId, data) {
+async function addPaymentMethod(companyId, userId, data) {
   if (data.isDefault) {
-    await PaymentMethod.updateMany({ user: userId, isDefault: true }, { isDefault: false });
+    await PaymentMethod.updateMany({ company: companyId, isDefault: true }, { isDefault: false });
   }
 
   return PaymentMethod.create({
+    company: companyId,
     user: userId,
     type: data.type,
     last4: data.last4,
@@ -22,59 +23,59 @@ async function addPaymentMethod(userId, data) {
   });
 }
 
-async function setDefault(paymentMethodId, userId) {
-  const method = await PaymentMethod.findOne({ _id: paymentMethodId, user: userId });
+async function setDefault(paymentMethodId, companyId) {
+  const method = await PaymentMethod.findOne({ _id: paymentMethodId, company: companyId });
   if (!method) throw new NotFoundError('Payment method');
 
-  await PaymentMethod.updateMany({ user: userId, isDefault: true }, { isDefault: false });
+  await PaymentMethod.updateMany({ company: companyId, isDefault: true }, { isDefault: false });
 
   method.isDefault = true;
   await method.save();
   return method;
 }
 
-async function deletePaymentMethod(paymentMethodId, userId) {
-  const method = await PaymentMethod.findOne({ _id: paymentMethodId, user: userId });
+async function deletePaymentMethod(paymentMethodId, companyId) {
+  const method = await PaymentMethod.findOne({ _id: paymentMethodId, company: companyId });
   if (!method) throw new NotFoundError('Payment method');
   await PaymentMethod.deleteOne({ _id: method._id });
 }
 
-async function getInvoices(userId, { page = 1, limit = 10 } = {}) {
+async function getInvoices(companyId, { page = 1, limit = 10 } = {}) {
   const skip = (page - 1) * limit;
 
   const [invoices, total] = await Promise.all([
-    Invoice.find({ user: userId }).sort({ issuedAt: -1 }).skip(skip).limit(limit),
-    Invoice.countDocuments({ user: userId }),
+    Invoice.find({ company: companyId }).sort({ issuedAt: -1 }).skip(skip).limit(limit),
+    Invoice.countDocuments({ company: companyId }),
   ]);
 
   return { invoices, pagination: { page, limit, total } };
 }
 
-async function getInvoiceById(invoiceId, userId) {
-  const invoice = await Invoice.findOne({ _id: invoiceId, user: userId });
+async function getInvoiceById(invoiceId, companyId) {
+  const invoice = await Invoice.findOne({ _id: invoiceId, company: companyId });
   if (!invoice) throw new NotFoundError('Invoice');
   return invoice;
 }
 
-async function getBillingStats(userId) {
+async function getBillingStats(companyId) {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startOfYear = new Date(now.getFullYear(), 0, 1);
 
-  const [monthBookings, yearBookings] = await Promise.all([
-    Booking.find({ user: userId, bookedAt: { $gte: startOfMonth } }).select('sellRate').lean(),
-    Booking.find({ user: userId, bookedAt: { $gte: startOfYear } }).select('sellRate costRate').lean(),
+  const [monthInvoices, yearInvoices, outstanding] = await Promise.all([
+    Invoice.find({ company: companyId, issuedAt: { $gte: startOfMonth } }).select('totalAmount').lean(),
+    Invoice.find({ company: companyId, issuedAt: { $gte: startOfYear } }).select('totalAmount').lean(),
+    Invoice.find({ company: companyId, status: 'pending' }).select('totalAmount').lean(),
   ]);
 
-  const spentThisMonth = monthBookings.reduce((sum, b) => sum + (b.sellRate || 0), 0);
-  const spentThisYear = yearBookings.reduce((sum, b) => sum + (b.sellRate || 0), 0);
-  const totalSaved = yearBookings.reduce((sum, b) => sum + ((b.sellRate || 0) * 0.15), 0);
+  const spentThisMonth = monthInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  const spentThisYear = yearInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  const outstandingAmount = outstanding.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
   return {
     spentThisMonth: Math.round(spentThisMonth * 100) / 100,
-    shipmentsThisMonth: monthBookings.length,
     spentThisYear: Math.round(spentThisYear * 100) / 100,
-    totalSaved: Math.round(totalSaved * 100) / 100,
+    outstanding: Math.round(outstandingAmount * 100) / 100,
   };
 }
 

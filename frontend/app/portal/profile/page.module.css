@@ -6,14 +6,71 @@
   margin-bottom: 24px;
 }
 
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
 .sectionTitle {
   font-family: var(--display);
   font-size: 14px;
   font-weight: 700;
   color: var(--navy);
-  margin-bottom: 16px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+}
+
+.btnEdit {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--navy);
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.btnEdit:hover {
+  border-color: var(--navy);
+  background: var(--off-white);
+}
+
+.readOnly {
+  background: var(--off-white);
+  color: var(--text2);
+  cursor: default;
+  border-color: transparent;
+}
+
+.btnRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btnCancel {
+  height: 44px;
+  padding: 0 20px;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.btnCancel:hover {
+  border-color: var(--navy);
+  color: var(--navy);
 }
 
 .btnSave {
@@ -59,6 +116,12 @@
 
 .btnDanger:hover {
   background: var(--red-light);
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--text3);
+  margin: 0;
 }
 
 .success {

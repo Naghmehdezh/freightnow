@@ -11,6 +11,7 @@ const bookSchema = z.object({
   quoteId: objectId(),
   quoteRateId: objectId(),
   customerReference: z.string().optional(),
+  paymentMethodId: z.string().optional(),
 });
 
 router.post('/', authenticate, validate(bookSchema), async (req, res, next) => {

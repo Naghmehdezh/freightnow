@@ -51,20 +51,26 @@ async function main() {
 
   // Company
   const company = await Company.create({
-    name: 'Acme Corp', country: 'CA', province: 'Ontario', city: 'Toronto', postalCode: 'M5V 3A8', shippingType: 'LTL Freight',
+    name: 'Acme Corp', street: '100 King St W', city: 'Toronto', province: 'Ontario', postalCode: 'M5V 3A8', country: 'CA',
+    phone: '416 555 0100', taxNumber: '123456789RT0001', shippingType: 'LTL Freight',
   });
 
   // Users — one per role
   const passwordHash = await bcrypt.hash('demo1234', 12);
+  const termsAccepted = new Date('2026-06-01T12:00:00Z');
   const user = await User.create({
     email: 'john@acmecorp.com', passwordHash, firstName: 'John', lastName: 'Smith', phone: '416 555 0100',
     role: 'customer', company: company._id,
+    termsAcceptedAt: termsAccepted, termsAcceptedFromIp: '127.0.0.1',
+    fedexTermsAcceptedAt: termsAccepted, fedexTermsAcceptedFromIp: '127.0.0.1',
   });
 
   const janeHash = await bcrypt.hash('demo1234', 12);
   const jane = await User.create({
     email: 'jane@acmecorp.com', passwordHash: janeHash, firstName: 'Jane', lastName: 'Smith', phone: '416 555 0101',
     role: 'company_admin', company: company._id,
+    termsAcceptedAt: termsAccepted, termsAcceptedFromIp: '127.0.0.1',
+    fedexTermsAcceptedAt: termsAccepted, fedexTermsAcceptedFromIp: '127.0.0.1',
   });
 
   const staffHash = await bcrypt.hash('staff1234', 12);
@@ -82,8 +88,8 @@ async function main() {
   });
 
   // Payment methods
-  await PaymentMethod.create({ user: user._id, type: 'visa', last4: '4242', expiryMonth: 12, expiryYear: 2027, isDefault: true });
-  await PaymentMethod.create({ user: user._id, type: 'mastercard', last4: '8888', expiryMonth: 6, expiryYear: 2028, isDefault: false });
+  await PaymentMethod.create({ company: company._id, user: user._id, type: 'visa', last4: '4242', expiryMonth: 12, expiryYear: 2027, isDefault: true });
+  await PaymentMethod.create({ company: company._id, user: user._id, type: 'mastercard', last4: '8888', expiryMonth: 6, expiryYear: 2028, isDefault: false });
 
   const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
@@ -223,7 +229,7 @@ async function main() {
 
   for (const inv of invoicesData) {
     await Invoice.create({
-      invoiceNumber: inv.number, user: user._id, totalAmount: inv.amount, currency: 'CAD', status: inv.status,
+      invoiceNumber: inv.number, company: company._id, user: user._id, totalAmount: inv.amount, currency: 'CAD', status: inv.status,
       issuedAt: new Date(inv.date), paidAt: inv.status === 'paid' ? new Date(new Date(inv.date).getTime() + 7 * 86400000) : null,
     });
   }

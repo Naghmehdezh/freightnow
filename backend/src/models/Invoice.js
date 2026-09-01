@@ -12,7 +12,8 @@ const invoiceItemSchema = new Schema({
 
 const invoiceSchema = new Schema({
   invoiceNumber: { type: String, required: true, unique: true },
-  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  company: { type: Schema.Types.ObjectId, ref: 'Company' },
+  user: { type: Schema.Types.ObjectId, ref: 'User' }, // createdBy — audit trail
   totalAmount: { type: Number, required: true },
   currency: { type: String, default: 'CAD' },
   status: { type: String, default: 'pending' },

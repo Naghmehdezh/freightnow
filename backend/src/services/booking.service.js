@@ -2,12 +2,16 @@ const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Quote = require('../models/Quote');
 const QuoteRate = require('../models/QuoteRate');
+const Company = require('../models/Company');
+const PaymentMethod = require('../models/PaymentMethod');
 const { generateBookingNumber } = require('../utils/trackingGenerator');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const shipmentService = require('./shipment.service');
 const activityLogService = require('./activityLog.service');
+const qbPayments = require('./qbPayments.service');
+const invoiceService = require('./invoice.service');
 
-async function createBooking(userId, { quoteId, quoteRateId, customerReference }) {
+async function createBooking(userId, { quoteId, quoteRateId, customerReference, paymentMethodId }) {
   const quote = await Quote.findOne({ _id: quoteId, user: userId }).populate('user');
   if (!quote) throw new NotFoundError('Quote');
   if (quote.status === 'expired') throw new ValidationError('This quote has expired');
@@ -16,7 +20,43 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference }
   const selectedRate = await QuoteRate.findOne({ _id: quoteRateId, quote: quote._id });
   if (!selectedRate) throw new NotFoundError('Rate');
 
+  // Determine payment terms for this company
+  const company = quote.user.company ? await Company.findById(quote.user.company) : null;
+  const paymentTerms = company?.paymentTerms || 'card';
+
+  // For card-paying customers, charge before creating the booking
+  let paymentResult = null;
+  const companyId = company?._id;
+  if (paymentTerms === 'card') {
+    // Find the payment method (company-scoped)
+    let pm;
+    if (paymentMethodId) {
+      pm = await PaymentMethod.findOne({ _id: paymentMethodId, company: companyId });
+    } else {
+      pm = await PaymentMethod.findOne({ company: companyId, isDefault: true });
+    }
+    if (!pm) throw new ValidationError('No payment method on file. Please add a card before booking.');
+
+    // If QuickBooks is connected and card has a token, charge via QB
+    if (pm.qbCardToken) {
+      try {
+        paymentResult = await qbPayments.chargeCard({
+          bookingId: null, // Will update after booking is created
+          companyId,
+          userId,
+          amount: selectedRate.displayRate,
+          currency: quote.currency,
+          paymentMethodId: pm._id,
+        });
+      } catch (payErr) {
+        throw new ValidationError(`Payment failed: ${payErr.message}`);
+      }
+    }
+    // If no QB token (dev/mock mode), skip actual charge but mark as succeeded
+  }
+
   const bookingNumber = await generateBookingNumber();
+  const paymentStatus = paymentTerms === 'card' ? 'paid' : 'invoiced';
 
   const session = await mongoose.startSession();
   try {
@@ -35,17 +75,33 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference }
         sellRate: selectedRate.displayRate,
         currency: quote.currency,
         customerReference,
+        paymentStatus,
       }], { session });
 
       await Quote.updateOne({ _id: quote._id }, { status: 'booked' }, { session });
 
       const shipment = await shipmentService.createShipmentForBooking(session, booking, quote, selectedRate);
 
+      // If we charged via QB, update the payment record with the booking ID
+      if (paymentResult) {
+        paymentResult.payment.booking = booking._id;
+        await paymentResult.payment.save();
+      }
+
       result = { booking, shipment };
     });
+
+    // Generate invoice (receipt for card customers, billable for monthly)
+    try {
+      await invoiceService.createInvoiceForBooking(result.booking, companyId, userId);
+    } catch (err) {
+      console.error('[INVOICE] Auto-generation failed:', err.message);
+    }
+
     activityLogService.logActivity(userId, quote.user.company, 'booking_created', {
       bookingId: result.booking.id,
       bookingNumber: result.booking.bookingNumber,
+      paymentStatus,
     });
     return result;
   } finally {

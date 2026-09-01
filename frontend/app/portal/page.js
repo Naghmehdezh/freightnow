@@ -9,7 +9,6 @@ export default function DashboardPage() {
   const [quotes, setQuotes] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [shipments, setShipments] = useState([]);
-  const [bookingAction, setBookingAction] = useState({});
 
   useEffect(() => {
     async function loadData() {
@@ -29,8 +28,30 @@ export default function DashboardPage() {
     loadData();
   }, []);
 
+  const [bookingAction, setBookingAction] = useState({});
+
   function isQuoteLive(quote) {
     return new Date(quote.expiresAt) > new Date();
+  }
+
+  async function handleBook(quote) {
+    const bestRate = quote.rates?.[0];
+    if (!bestRate) return;
+    setBookingAction(prev => ({ ...prev, [bestRate.id]: 'loading' }));
+    try {
+      const data = await fetchAPI('/api/bookings', {
+        method: 'POST',
+        body: JSON.stringify({ quoteId: quote.id, quoteRateId: bestRate.id }),
+      });
+      setBookingAction(prev => ({ ...prev, [bestRate.id]: 'booked' }));
+      const msg = data.booking.paymentStatus === 'paid'
+        ? `Booked & paid! ${data.booking.bookingNumber} — tracking ${data.shipment.trackingNumber}`
+        : `Booked! ${data.booking.bookingNumber} — tracking ${data.shipment.trackingNumber}. Invoice will be sent.`;
+      alert(msg);
+    } catch (err) {
+      setBookingAction(prev => ({ ...prev, [bestRate.id]: 'error' }));
+      alert(err.error?.message || err.message || 'Booking failed');
+    }
   }
 
   function formatQuoteTime(dateStr) {
@@ -45,20 +66,6 @@ export default function DashboardPage() {
     return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
 
-  async function handleBook(quote) {
-    const bestRate = quote.rates?.[0];
-    if (!bestRate) return;
-    setBookingAction(prev => ({ ...prev, [bestRate.id]: 'loading' }));
-    try {
-      await fetchAPI('/api/bookings', {
-        method: 'POST',
-        body: JSON.stringify({ quoteId: quote.id, quoteRateId: bestRate.id }),
-      });
-      setBookingAction(prev => ({ ...prev, [bestRate.id]: 'booked' }));
-    } catch {
-      setBookingAction(prev => ({ ...prev, [bestRate.id]: 'error' }));
-    }
-  }
 
   function getStatusClass(status) {
     if (status === 'delivered') return s.statusDelivered;
@@ -166,12 +173,13 @@ export default function DashboardPage() {
         <div className={s.tableWrap}>
           <table>
             <thead>
-              <tr><th>Quote #</th><th>Route</th><th>Type</th><th>Best carrier</th><th>Service</th><th>Rate</th><th>Est. delivery</th><th>Quoted at</th><th>Expires</th><th></th></tr>
+              <tr><th>Quote #</th><th>Route</th><th>Type</th><th>Best carrier</th><th>Service</th><th>Rate</th><th>Est. delivery</th><th>Quoted at</th><th></th></tr>
             </thead>
             <tbody>
               {displayQuotes.map((q, i) => {
-                const isLive = q.expiresAt ? isQuoteLive(q) : q.live;
                 const bestRate = q.rates?.[0];
+                const isLive = q.expiresAt ? isQuoteLive(q) : q.live;
+                const isBooked = q.status === 'booked';
                 const bookState = bestRate ? bookingAction[bestRate.id] : undefined;
                 const route = q.route || `${q.originCity || ''} → ${q.destCity || ''}`;
                 const carrier = q.carrier || bestRate?.carrierName || '—';
@@ -191,22 +199,19 @@ export default function DashboardPage() {
                     <td>{delivery}</td>
                     <td style={{ fontSize: '12px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{quotedAt}</td>
                     <td>
-                      <span className={`${s.quoteExpiry} ${isLive ? s.quoteExpiryLive : s.quoteExpiryExpired}`}>
-                        {isLive ? '● Live' : '✕ Expired'}
-                      </span>
-                    </td>
-                    <td>
-                      {bestRate && isLive ? (
+                      {isBooked || bookState === 'booked' ? (
+                        <button className={s.btnBookQuote} disabled>Booked ✓</button>
+                      ) : bestRate && isLive ? (
                         <button
                           className={s.btnBookQuote}
-                          disabled={bookState === 'loading' || bookState === 'booked'}
+                          disabled={bookState === 'loading'}
                           onClick={() => handleBook(q)}
                         >
-                          {bookState === 'loading' ? '…' : bookState === 'booked' ? 'Booked ✓' : 'Book →'}
+                          {bookState === 'loading' ? '…' : 'Book →'}
                         </button>
-                      ) : !isLive ? (
+                      ) : (
                         <button className={s.btnBookQuote} disabled>Expired</button>
-                      ) : null}
+                      )}
                     </td>
                   </tr>
                 );

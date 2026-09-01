@@ -227,10 +227,14 @@ export default function QuotePage() {
         body: JSON.stringify({ quoteId: r.quoteId, quoteRateId: r.quoteRateId }),
       });
       setBooking(prev => ({ ...prev, [r.quoteRateId]: 'booked' }));
-      alert(`Booked! Booking ${data.booking.bookingNumber} — tracking number ${data.shipment.trackingNumber}.`);
+      const msg = data.booking.paymentStatus === 'paid'
+        ? `Booked & paid! Booking ${data.booking.bookingNumber} — tracking number ${data.shipment.trackingNumber}.`
+        : `Booked! Booking ${data.booking.bookingNumber} — tracking number ${data.shipment.trackingNumber}. Invoice will be sent.`;
+      alert(msg);
     } catch (err) {
       setBooking(prev => ({ ...prev, [r.quoteRateId]: 'error' }));
-      alert(err.error?.message || 'Could not book this rate.');
+      const message = err.error?.message || err.message || 'Could not book this rate.';
+      alert(message);
     }
   }
 
@@ -467,6 +471,7 @@ export default function QuotePage() {
             <textarea rows="3" placeholder="Dangerous goods class, temperature controlled, fragile, customs brokerage needed, insurance, etc." value={spotNotes} onChange={e => setSpotNotes(e.target.value)} />
           </div>
 
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>Quoted rates are estimates and may be subject to adjustment based on actual shipment details and carrier surcharges.</div>
           <button className={s.btnSpotSubmit} onClick={submitSpotRate}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             Send spot rate request to IFF Cargo
@@ -492,6 +497,7 @@ export default function QuotePage() {
           <div className={s.resultsSummary}>
             {results.summary.count} quotes &middot; {results.summary.orig} &rarr; {results.summary.dest} &middot; {results.summary.type} &middot; {results.summary.weight} lbs &middot; {results.summary.currency}
           </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>All rates shown are estimates and may be subject to adjustment based on actual shipment weight, dimensions, and carrier surcharges.</div>
           {results.quotes.map((r, i) => {
             const isBest = i === 0;
             const cheapest = results.quotes[0].displayRate;

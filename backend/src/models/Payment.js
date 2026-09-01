@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 // One record per attempt to charge a card, including failures. No real QuickBooks integration
 // yet — this is schema-only scaffolding, not wired into the booking flow.
 const paymentSchema = new Schema({
-  booking: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
+  booking: { type: Schema.Types.ObjectId, ref: 'Booking' },
   user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   amount: { type: Number, required: true },
   currency: { type: String, default: 'CAD' },

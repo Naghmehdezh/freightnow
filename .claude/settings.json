@@ -2,7 +2,33 @@
   "permissions": {
     "allow": [
       "Bash(mkdir -p \"/Users/Naghmeh.Dezhabad@MLSE.com/.config/gh\")",
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(node -e \"require\\('./src/routes/index.js'\\); console.log\\('Routes loaded OK'\\)\")",
+      "Bash(node -e \"require\\('./src/services/booking.service.js'\\); console.log\\('Booking service loaded OK'\\)\")",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_handle_dialog",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_find",
+      "Bash(mongosh --quiet iffcargo --eval \"const p = db.payments.find\\(\\).sort\\({attemptedAt:-1}\\).limit\\(1\\).toArray\\(\\); printjson\\(p[0] ? {id: p[0]._id.toString\\(\\), amount: p[0].amount, currency: p[0].currency, status: p[0].status, qbTransactionId: p[0].qbTransactionId, booking: p[0].booking?.toString\\(\\)} : 'none'\\)\")",
+      "Bash(mongosh --quiet iffcargo --eval \"const p = db.payments.find\\(\\).sort\\({attemptedAt:-1}\\).limit\\(1\\).toArray\\(\\); if \\(p.length\\) { const doc = p[0]; print\\(JSON.stringify\\({amount: doc.amount, currency: doc.currency, status: doc.status, qbTransactionId: doc.qbTransactionId, hasBooking: !!doc.booking}, null, 2\\)\\); } else print\\('no payments'\\)\")",
+      "Bash(curl -s http://localhost:4000/api/quickbooks/status)",
+      "Bash(python3 -m json.tool)",
+      "mcp__playwright__browser_tabs",
+      "mcp__playwright__browser_type",
+      "Bash(lsof -ti:3000)",
+      "Bash(python3 -c \"import sys,json; print\\(json.dumps\\(json.loads\\(sys.stdin.read\\(\\)\\), indent=2\\)\\)\")",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const { quickbooks } = require\\('./src/config/env'\\); const url = require\\('./src/services/quickbooks.service'\\).getAuthorizationUrl\\('admin'\\); console.log\\(url\\);\")",
+      "Bash(node -e \"require\\('./src/models/Invoice'\\); require\\('./src/services/invoice.service'\\); require\\('./src/services/billing.service'\\); require\\('./src/routes/billing.routes'\\); console.log\\('All modules load OK'\\);\")",
+      "Bash(npm run:*)",
+      "Bash(npx next:*)",
+      "Bash(mongosh iffcargo:*)",
+      "WebFetch(domain:developer.fedex.com)",
+      "WebFetch(domain:www.fedex.com)"
     ]
   }
 }

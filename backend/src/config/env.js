@@ -8,6 +8,12 @@ module.exports = {
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS, 10) || 12,
   auth0Domain: process.env.AUTH0_DOMAIN,
   auth0Audience: process.env.AUTH0_AUDIENCE,
+  quickbooks: {
+    clientId: process.env.QB_CLIENT_ID,
+    clientSecret: process.env.QB_CLIENT_SECRET,
+    redirectUri: process.env.QB_REDIRECT_URI || 'http://localhost:4000/api/quickbooks/callback',
+    environment: process.env.QB_ENVIRONMENT || 'sandbox', // 'sandbox' or 'production'
+  },
   carriers: {
     fedex: {
       apiKey: process.env.FEDEX_API_KEY,

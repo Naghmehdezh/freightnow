@@ -199,3 +199,157 @@
   border-color: var(--navy);
   color: var(--navy);
 }
+
+/* Add card modal */
+.cardFormOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.cardForm {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px 32px;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.cardFormTitle {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 20px;
+}
+
+.cardFormError {
+  background: var(--red-light);
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.cardFormLabel {
+  display: block;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+
+.cardFormInput {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color .15s;
+}
+
+.cardFormInput:focus {
+  border-color: var(--navy);
+}
+
+.cardFormRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.cardFormActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.cardFormSubmit {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--navy);
+  cursor: pointer;
+  transition: opacity .15s;
+}
+
+.cardFormSubmit:hover {
+  opacity: 0.85;
+}
+
+.cardFormSubmit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* QuickBooks connection section */
+.qbSection {
+  margin-bottom: 24px;
+}
+
+.qbConnected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.qbDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+
+.qbDisconnected {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.qbMessage {
+  font-size: 13px;
+  color: var(--text3);
+  margin: 0;
+}
+
+.qbConnectBtn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: #2ca01c;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+
+.qbConnectBtn:hover {
+  opacity: 0.85;
+}

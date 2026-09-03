@@ -10,6 +10,7 @@ const shipmentService = require('./shipment.service');
 const activityLogService = require('./activityLog.service');
 const qbPayments = require('./qbPayments.service');
 const invoiceService = require('./invoice.service');
+const fedexAddr = require('./fedexAddressValidation.service');
 
 async function createBooking(userId, { quoteId, quoteRateId, customerReference, paymentMethodId }) {
   const quote = await Quote.findOne({ _id: quoteId, user: userId }).populate('user');
@@ -19,6 +20,34 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
 
   const selectedRate = await QuoteRate.findOne({ _id: quoteRateId, quote: quote._id });
   if (!selectedRate) throw new NotFoundError('Rate');
+
+  // Validate origin and destination addresses via FedEx (server-side gate)
+  try {
+    const [origResult, destResult] = await Promise.all([
+      fedexAddr.validateAddress({
+        streetLines: [quote.originCity || quote.originPostal || ''],
+        city: quote.originCity || '',
+        postalCode: quote.originPostal || '',
+        countryCode: quote.originCountry || 'CA',
+      }),
+      fedexAddr.validateAddress({
+        streetLines: [quote.destCity || quote.destPostal || ''],
+        city: quote.destCity || '',
+        postalCode: quote.destPostal || '',
+        countryCode: quote.destCountry || 'US',
+      }),
+    ]);
+    if (origResult.valid === false) {
+      throw new ValidationError('Origin address could not be validated by FedEx. Please correct the address and try again.');
+    }
+    if (destResult.valid === false) {
+      throw new ValidationError('Destination address could not be validated by FedEx. Please correct the address and try again.');
+    }
+    // If FedEx is unavailable (fallback: true), allow booking to proceed
+  } catch (err) {
+    if (err instanceof ValidationError) throw err;
+    console.error('[BOOKING] Address validation error (proceeding):', err.message);
+  }
 
   // Determine payment terms for this company
   const company = quote.user.company ? await Company.findById(quote.user.company) : null;

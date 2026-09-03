@@ -85,6 +85,9 @@ export default function QuotePage() {
   const [results, setResults] = useState(null);
   const [spotSuccess, setSpotSuccess] = useState(false);
   const [booking, setBooking] = useState({}); // { [quoteRateId]: 'loading' | 'booked' | 'error' }
+  const [originValidation, setOriginValidation] = useState(null);
+  const [destValidation, setDestValidation] = useState(null);
+  const [validating, setValidating] = useState(false);
 
   // Origin/Destination
   const [origCity, setOrigCity] = useState('');
@@ -162,6 +165,45 @@ export default function QuotePage() {
 
     setLoading(true);
     setResults(null);
+    setOriginValidation(null);
+    setDestValidation(null);
+
+    // Validate addresses via FedEx before fetching rates
+    setValidating(true);
+    try {
+      const [origResult, destResult] = await Promise.all([
+        fetchAPI('/api/address-validation', {
+          method: 'POST',
+          body: JSON.stringify({
+            streetLines: [origCity.trim() || origPostal.trim()],
+            city: origCity.trim() || 'Unknown',
+            postalCode: origPostal.trim().replace(/\s/g, '') || '00000',
+            countryCode: origCountry,
+          }),
+        }).catch(() => ({ valid: null, fallback: true })),
+        fetchAPI('/api/address-validation', {
+          method: 'POST',
+          body: JSON.stringify({
+            streetLines: [destCity.trim() || destPostal.trim()],
+            city: destCity.trim() || 'Unknown',
+            postalCode: destPostal.trim().replace(/\s/g, '') || '00000',
+            countryCode: destCountry,
+          }),
+        }).catch(() => ({ valid: null, fallback: true })),
+      ]);
+      setOriginValidation(origResult);
+      setDestValidation(destResult);
+
+      // Block if either address is explicitly invalid (but allow fallback/unavailable)
+      if (origResult.valid === false || destResult.valid === false) {
+        setValidating(false);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // If validation fails entirely, continue with quotes (don't block on FedEx downtime)
+    }
+    setValidating(false);
 
     await new Promise(r => setTimeout(r, 900));
 
@@ -272,6 +314,8 @@ export default function QuotePage() {
     setCurrentType(type);
     setResults(null);
     setSpotSuccess(false);
+    setOriginValidation(null);
+    setDestValidation(null);
   }
 
   return (
@@ -321,27 +365,59 @@ export default function QuotePage() {
       <div className={s.formCols}>
         <div>
           <div className={s.colLabel}>Origin</div>
-          <div className="field"><label>City</label><input placeholder="e.g. Toronto" value={origCity} onChange={e => setOrigCity(e.target.value)} /></div>
+          <div className="field"><label>City</label><input placeholder="e.g. Toronto" value={origCity} onChange={e => { setOrigCity(e.target.value); setOriginValidation(null); }} /></div>
           <div className="grid2">
-            <div className="field"><label>Postal / ZIP</label><input placeholder="M5V 3A8" value={origPostal} onChange={e => setOrigPostal(e.target.value)} /></div>
+            <div className="field"><label>Postal / ZIP</label><input placeholder="M5V 3A8" value={origPostal} onChange={e => { setOrigPostal(e.target.value); setOriginValidation(null); }} /></div>
             <div className="field"><label>Country</label>
-              <select value={origCountry} onChange={e => setOrigCountry(e.target.value)}>
+              <select value={origCountry} onChange={e => { setOrigCountry(e.target.value); setOriginValidation(null); }}>
                 <option value="CA">Canada</option><option value="US">USA</option><option value="CN">China</option><option value="GB">UK</option><option value="DE">Germany</option><option value="other">Other</option>
               </select>
             </div>
           </div>
+          {originValidation && originValidation.valid === true && (
+            <div className={s.validationOk}>&#10003; Origin address verified{originValidation.classification !== 'UNKNOWN' ? ` (${originValidation.classification.toLowerCase()})` : ''}</div>
+          )}
+          {originValidation && originValidation.valid === false && originValidation.effectiveAddress ? (
+            <div className={s.validationSuggestion}>
+              Origin address could not be verified as entered.
+              <strong>FedEx suggests: {originValidation.effectiveAddress.city}{originValidation.effectiveAddress.stateOrProvinceCode ? `, ${originValidation.effectiveAddress.stateOrProvinceCode}` : ''} {originValidation.effectiveAddress.postalCode}</strong>
+              <button className={s.btnAcceptSuggestion} onClick={() => {
+                setOrigCity(originValidation.effectiveAddress.city || origCity);
+                setOrigPostal(originValidation.effectiveAddress.postalCode || origPostal);
+                setOriginValidation({ ...originValidation, valid: true });
+              }}>Accept suggestion</button>
+            </div>
+          ) : originValidation && originValidation.valid === false ? (
+            <div className={s.validationError}>&#10007; Origin address could not be validated. Please check city and postal code.</div>
+          ) : null}
         </div>
         <div>
           <div className={s.colLabel}>Destination</div>
-          <div className="field"><label>City</label><input placeholder="e.g. Chicago" value={destCity} onChange={e => setDestCity(e.target.value)} /></div>
+          <div className="field"><label>City</label><input placeholder="e.g. Chicago" value={destCity} onChange={e => { setDestCity(e.target.value); setDestValidation(null); }} /></div>
           <div className="grid2">
-            <div className="field"><label>Postal / ZIP</label><input placeholder="60601" value={destPostal} onChange={e => setDestPostal(e.target.value)} /></div>
+            <div className="field"><label>Postal / ZIP</label><input placeholder="60601" value={destPostal} onChange={e => { setDestPostal(e.target.value); setDestValidation(null); }} /></div>
             <div className="field"><label>Country</label>
-              <select value={destCountry} onChange={e => setDestCountry(e.target.value)}>
+              <select value={destCountry} onChange={e => { setDestCountry(e.target.value); setDestValidation(null); }}>
                 <option value="US">USA</option><option value="CA">Canada</option><option value="CN">China</option><option value="GB">UK</option><option value="DE">Germany</option><option value="other">Other</option>
               </select>
             </div>
           </div>
+          {destValidation && destValidation.valid === true && (
+            <div className={s.validationOk}>&#10003; Destination address verified{destValidation.classification !== 'UNKNOWN' ? ` (${destValidation.classification.toLowerCase()})` : ''}</div>
+          )}
+          {destValidation && destValidation.valid === false && destValidation.effectiveAddress ? (
+            <div className={s.validationSuggestion}>
+              Destination address could not be verified as entered.
+              <strong>FedEx suggests: {destValidation.effectiveAddress.city}{destValidation.effectiveAddress.stateOrProvinceCode ? `, ${destValidation.effectiveAddress.stateOrProvinceCode}` : ''} {destValidation.effectiveAddress.postalCode}</strong>
+              <button className={s.btnAcceptSuggestion} onClick={() => {
+                setDestCity(destValidation.effectiveAddress.city || destCity);
+                setDestPostal(destValidation.effectiveAddress.postalCode || destPostal);
+                setDestValidation({ ...destValidation, valid: true });
+              }}>Accept suggestion</button>
+            </div>
+          ) : destValidation && destValidation.valid === false ? (
+            <div className={s.validationError}>&#10007; Destination address could not be validated. Please check city and postal code.</div>
+          ) : null}
         </div>
       </div>
 
@@ -413,8 +489,10 @@ export default function QuotePage() {
             ))}
           </div>
 
-          <button className={s.btnQuote} onClick={getQuotes} disabled={loading}>
-            {loading ? (
+          <button className={s.btnQuote} onClick={getQuotes} disabled={loading || validating}>
+            {validating ? (
+              <><span className="spinner" /> Validating addresses&hellip;</>
+            ) : loading ? (
               <><span className="spinner" /> Fetching&hellip;</>
             ) : (
               <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Get quotes from all carriers</>

@@ -29,6 +29,35 @@ export default function DashboardPage() {
   }, []);
 
   const [bookingAction, setBookingAction] = useState({});
+  const [labelLoading, setLabelLoading] = useState({});
+
+  function downloadLabelFromBase64(encodedLabel, docType, trackingNumber) {
+    const mimeMap = { PDF: 'application/pdf', PNG: 'image/png', ZPLII: 'text/plain' };
+    const extMap = { PDF: 'pdf', PNG: 'png', ZPLII: 'zpl' };
+    const mime = mimeMap[docType] || 'application/octet-stream';
+    const ext = extMap[docType] || 'bin';
+    const binary = atob(encodedLabel);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `label_${trackingNumber}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleDownloadLabel(shipId) {
+    setLabelLoading(prev => ({ ...prev, [shipId]: true }));
+    try {
+      const data = await fetchAPI(`/api/shipments/${shipId}/label`);
+      downloadLabelFromBase64(data.encodedLabel, data.docType, data.trackingNumber);
+    } catch {
+      alert('Label not available for this shipment.');
+    }
+    setLabelLoading(prev => ({ ...prev, [shipId]: false }));
+  }
 
   function isQuoteLive(quote) {
     return new Date(quote.expiresAt) > new Date();
@@ -44,9 +73,13 @@ export default function DashboardPage() {
         body: JSON.stringify({ quoteId: quote.id, quoteRateId: bestRate.id }),
       });
       setBookingAction(prev => ({ ...prev, [bestRate.id]: 'booked' }));
+      const tracking = data.carrierTrackingNumber || data.shipment.trackingNumber;
       const msg = data.booking.paymentStatus === 'paid'
-        ? `Booked & paid! ${data.booking.bookingNumber} — tracking ${data.shipment.trackingNumber}`
-        : `Booked! ${data.booking.bookingNumber} — tracking ${data.shipment.trackingNumber}. Invoice will be sent.`;
+        ? `Booked & paid! ${data.booking.bookingNumber} — tracking ${tracking}`
+        : `Booked! ${data.booking.bookingNumber} — tracking ${tracking}. Invoice will be sent.`;
+      if (data.label?.encodedLabel) {
+        downloadLabelFromBase64(data.label.encodedLabel, data.label.docType || 'PDF', tracking);
+      }
       alert(msg);
     } catch (err) {
       setBookingAction(prev => ({ ...prev, [bestRate.id]: 'error' }));
@@ -268,19 +301,34 @@ export default function DashboardPage() {
         <div className={s.tableWrap}>
           <table>
             <thead>
-              <tr><th>Tracking #</th><th>Route</th><th>Carrier</th><th>Service</th><th>Date</th><th>Status</th></tr>
+              <tr><th>Tracking #</th><th>Route</th><th>Carrier</th><th>Service</th><th>Date</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
-              {displayShipments.map((ship, i) => (
-                <tr key={i}>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>{ship.trackingNumber}</td>
-                  <td>{ship.route || `${ship.originCity || ''} → ${ship.destCity || ''}`}</td>
-                  <td>{ship.carrier || ship.carrierName}</td>
-                  <td>{ship.service || ship.serviceName}</td>
-                  <td style={{ fontSize: '12px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{ship.date || ship.bookedAt?.split('T')[0]}</td>
-                  <td><span className={`${s.statusBadge} ${getStatusClass(ship.status)}`}>{getStatusLabel(ship.status)}</span></td>
-                </tr>
-              ))}
+              {displayShipments.map((ship, i) => {
+                const shipId = ship._id || ship.id;
+                return (
+                  <tr key={i}>
+                    <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>{ship.trackingNumber}</td>
+                    <td>{ship.route || `${ship.originCity || ''} → ${ship.destCity || ''}`}</td>
+                    <td>{ship.carrier || ship.carrierName}</td>
+                    <td>{ship.service || ship.serviceName}</td>
+                    <td style={{ fontSize: '12px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{ship.date || ship.bookedAt?.split('T')[0]}</td>
+                    <td><span className={`${s.statusBadge} ${getStatusClass(ship.status)}`}>{getStatusLabel(ship.status)}</span></td>
+                    <td>
+                      {shipId && ship.labelDocType && (
+                        <button
+                          className={s.btnBookQuote}
+                          style={{ background: 'var(--green)' }}
+                          onClick={() => handleDownloadLabel(shipId)}
+                          disabled={labelLoading[shipId]}
+                        >
+                          {labelLoading[shipId] ? '…' : 'Label'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

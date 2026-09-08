@@ -16,8 +16,15 @@ const bookSchema = z.object({
 
 router.post('/', authenticate, validate(bookSchema), async (req, res, next) => {
   try {
-    const { booking, shipment } = await bookingService.createBooking(req.user.id, req.validated);
-    res.status(201).json({ booking, shipment });
+    const result = await bookingService.createBooking(req.user.id, req.validated);
+    const response = { booking: result.booking, shipment: result.shipment };
+    if (result.carrierTrackingNumber) {
+      response.carrierTrackingNumber = result.carrierTrackingNumber;
+    }
+    if (result.label) {
+      response.label = result.label;
+    }
+    res.status(201).json(response);
   } catch (err) { next(err); }
 });
 

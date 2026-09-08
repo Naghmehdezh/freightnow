@@ -110,6 +110,9 @@ function TrackPageInner() {
           <div className={s.resultHeader}>
             <div>
               <div className={s.trackingNum}>{trackingNumber}</div>
+              {result.carrierTrackingNumber && result.carrierTrackingNumber !== trackingNumber && (
+                <div className={s.routeLine} style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>Carrier tracking: {result.carrierTrackingNumber}</div>
+              )}
               <div className={s.carrierLine}>{result.carrier}</div>
               <div className={s.routeLine}>{result.route}</div>
             </div>

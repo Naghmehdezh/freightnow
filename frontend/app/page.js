@@ -107,8 +107,8 @@ export default function HomePage() {
             </div>
             <div className={s.serviceCard}>
               <div className={s.serviceIcon}><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-              <h3>Cargo Insurance &amp; Drayage</h3>
-              <p>Comprehensive cargo insurance plus drayage services for port and rail container pickup and delivery.</p>
+              <h3>Declared Value &amp; Drayage</h3>
+              <p>Declared value coverage for your shipments plus drayage services for port and rail container pickup and delivery.</p>
               <span className={s.serviceTag}>Request spot rate</span>
             </div>
           </div>

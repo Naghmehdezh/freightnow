@@ -34,9 +34,17 @@ export default function OnboardingPage() {
   });
   const [termsChecked, setTermsChecked] = useState(false);
   const [fedexChecked, setFedexChecked] = useState(false);
+  const [fedexScrolled, setFedexScrolled] = useState(false);
   const [authorizedChecked, setAuthorizedChecked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  function handleEulaScroll(e) {
+    const el = e.target;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 10) {
+      setFedexScrolled(true);
+    }
+  }
 
   // If user already has a company but hasn't accepted terms, skip to step 2
   useEffect(() => {
@@ -207,9 +215,12 @@ export default function OnboardingPage() {
 
               <div className={s.termsSection}>
                 <div className={s.termsLabel}>FedEx End User License Agreement</div>
-                <div className={s.termsBox}>{FEDEX_EULA_TEXT}</div>
-                <label className={s.checkbox}>
-                  <input type="checkbox" checked={fedexChecked} onChange={e => setFedexChecked(e.target.checked)} />
+                <div className={s.termsBox} onScroll={handleEulaScroll}>{FEDEX_EULA_TEXT}</div>
+                {!fedexScrolled && (
+                  <p className={s.scrollHint}>Please scroll to the end of the agreement to continue.</p>
+                )}
+                <label className={`${s.checkbox} ${!fedexScrolled ? s.checkboxDisabled : ''}`}>
+                  <input type="checkbox" checked={fedexChecked} onChange={e => setFedexChecked(e.target.checked)} disabled={!fedexScrolled} />
                   <span>I have read and accept the FedEx End User License Agreement</span>
                 </label>
               </div>
@@ -222,7 +233,7 @@ export default function OnboardingPage() {
               </div>
 
               <button type="submit" className={s.submit} disabled={loading || !termsChecked || !fedexChecked || !authorizedChecked}>
-                {loading ? 'Completing…' : 'Accept & continue to dashboard'}
+                {loading ? 'Completing…' : 'I accept the terms of FedEx EULA to start shipping'}
               </button>
             </form>
           </>

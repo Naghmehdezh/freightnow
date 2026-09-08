@@ -120,6 +120,19 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
       result = { booking, shipment };
     });
 
+    // Attempt real carrier booking (outside transaction — graceful degradation on failure)
+    try {
+      const carrierResult = await shipmentService.bookWithCarrier(
+        result.shipment, quote, selectedRate, company,
+      );
+      if (carrierResult) {
+        result.carrierTrackingNumber = carrierResult.carrierTrackingNumber;
+        result.label = carrierResult.label;
+      }
+    } catch (err) {
+      console.error('[BOOKING] Carrier booking failed (using IFF tracking):', err.message);
+    }
+
     // Generate invoice (receipt for card customers, billable for monthly)
     try {
       await invoiceService.createInvoiceForBooking(result.booking, companyId, userId);
@@ -130,6 +143,7 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
     activityLogService.logActivity(userId, quote.user.company, 'booking_created', {
       bookingId: result.booking.id,
       bookingNumber: result.booking.bookingNumber,
+      carrierTrackingNumber: result.carrierTrackingNumber || null,
       paymentStatus,
     });
     return result;

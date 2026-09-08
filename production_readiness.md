@@ -89,9 +89,11 @@ and working before submitting to FedEx. Current status:
 2. **Identity verification at sign-up** (code sent by text/email, typed back in).
    - [x] Auth0 handles this — the guide explicitly says "this gives us identity verification for
      free." Auth0 sends email verification on signup.
-   - [ ] **Confirm Auth0 email verification is required** — this is a dashboard setting
-     (Authentication → Database → Require email verification). Must be toggled ON so users cannot
-     skip verification. Needs manual confirmation in the Auth0 dashboard.
+   - [x] **Auth0 email verification is enabled** — confirmed in Auth0 dashboard (Branding →
+     Email Templates → "Verification Email (Link)" template is enabled). Auth0 sends a
+     verification email on signup. Note: still using Auth0's built-in email provider
+     (dev/trial) — must configure a Custom Email Provider (SendGrid, Mailgun, etc.) before
+     production to ensure reliable delivery.
 
 3. **Estimate disclaimer on every quote** ("the price is an estimate and may change").
    - [x] General estimate disclaimer shown above all rate results: "All rates shown are estimates

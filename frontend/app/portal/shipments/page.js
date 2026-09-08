@@ -14,11 +14,40 @@ const DEMO_SHIPMENTS = [
   { id: 'IFF-2026-00335', bookingNumber: 'BK-2026-0006', tracking: 'XPO-2026-00442', route: 'Hamilton → Boston', carrier: 'XPO Logistics', type: 'LTL', weight: '600 lbs', booked: 'May 12', delivery: 'May 16', cost: 'C$345.20', status: 'delivered', origin: 'Hamilton, ON L8P 1A1', dest: 'Boston, MA 02101', pieces: '3 pallets', service: 'Express LTL' },
 ];
 
+function downloadLabelFromBase64(encodedLabel, docType, trackingNumber) {
+  const mimeMap = { PDF: 'application/pdf', PNG: 'image/png', ZPLII: 'text/plain' };
+  const extMap = { PDF: 'pdf', PNG: 'png', ZPLII: 'zpl' };
+  const mime = mimeMap[docType] || 'application/octet-stream';
+  const ext = extMap[docType] || 'bin';
+  const binary = atob(encodedLabel);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `label_${trackingNumber}.${ext}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ShipmentsPage() {
   const [shipments, setShipments] = useState(DEMO_SHIPMENTS);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [expandedRow, setExpandedRow] = useState(null);
+  const [labelLoading, setLabelLoading] = useState({});
+
+  async function handleDownloadLabel(shipId) {
+    setLabelLoading(prev => ({ ...prev, [shipId]: true }));
+    try {
+      const data = await fetchAPI(`/api/shipments/${shipId}/label`);
+      downloadLabelFromBase64(data.encodedLabel, data.docType, data.trackingNumber);
+    } catch {
+      alert('Label not available for this shipment.');
+    }
+    setLabelLoading(prev => ({ ...prev, [shipId]: false }));
+  }
 
   useEffect(() => {
     async function load() {
@@ -103,7 +132,15 @@ export default function ShipmentsPage() {
                         <div><div className={s.detailLabel}>Est. delivery</div><div className={s.detailValue}>{ship.delivery || ship.estimatedDelivery?.split('T')[0] || '—'}</div></div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                           <Link href={`/portal/track?id=${encodeURIComponent(ship.tracking || ship.trackingNumber)}`} className={s.btnTrack}>Track &rarr;</Link>
-                          <button className={s.btnDownload}>Download BOL</button>
+                          {(ship.labelDocType || ship.labelBase64) && (
+                            <button
+                              className={s.btnDownload}
+                              onClick={() => handleDownloadLabel(ship._id || ship.id)}
+                              disabled={labelLoading[ship._id || ship.id]}
+                            >
+                              {labelLoading[ship._id || ship.id] ? 'Downloading…' : `Download Label (${ship.labelDocType || 'PDF'})`}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </td>

@@ -85,15 +85,18 @@ export default function QuotePage() {
   const [results, setResults] = useState(null);
   const [spotSuccess, setSpotSuccess] = useState(false);
   const [booking, setBooking] = useState({}); // { [quoteRateId]: 'loading' | 'booked' | 'error' }
+  const [labels, setLabels] = useState({}); // { [quoteRateId]: { encodedLabel, docType, trackingNumber } }
   const [originValidation, setOriginValidation] = useState(null);
   const [destValidation, setDestValidation] = useState(null);
   const [validating, setValidating] = useState(false);
 
   // Origin/Destination
   const [origCity, setOrigCity] = useState('');
+  const [origProvince, setOrigProvince] = useState('');
   const [origPostal, setOrigPostal] = useState('');
   const [origCountry, setOrigCountry] = useState('CA');
   const [destCity, setDestCity] = useState('');
+  const [destProvince, setDestProvince] = useState('');
   const [destPostal, setDestPostal] = useState('');
   const [destCountry, setDestCountry] = useState('US');
 
@@ -213,17 +216,19 @@ export default function QuotePage() {
         shipmentType: currentType,
         origin: {
           city: origCity.trim() || undefined,
+          province: origProvince.trim() || undefined,
           postalCode: origPostal.trim().replace(/\s/g, '') || undefined,
           country: origCountry,
         },
         destination: {
           city: destCity.trim() || undefined,
+          province: destProvince.trim() || undefined,
           postalCode: destPostal.trim().replace(/\s/g, '') || undefined,
           country: destCountry,
         },
         weight,
         pieces,
-        dimensions: { length: parseInt(dimL), width: parseInt(dimW), height: parseInt(dimH) },
+        ...(dimL && dimW && dimH && { dimensions: { length: parseInt(dimL), width: parseInt(dimW), height: parseInt(dimH) } }),
         freightClass: fc || '70',
         currency,
         ...(pickupDate && { pickupDate }),
@@ -269,9 +274,19 @@ export default function QuotePage() {
         body: JSON.stringify({ quoteId: r.quoteId, quoteRateId: r.quoteRateId }),
       });
       setBooking(prev => ({ ...prev, [r.quoteRateId]: 'booked' }));
+      if (data.label?.encodedLabel) {
+        setLabels(prev => ({ ...prev, [r.quoteRateId]: {
+          encodedLabel: data.label.encodedLabel,
+          docType: data.label.docType || 'PDF',
+          trackingNumber: data.carrierTrackingNumber || data.shipment.trackingNumber,
+        }}));
+      }
+      const tracking = data.carrierTrackingNumber
+        ? `${data.carrierTrackingNumber} (carrier) / ${data.shipment.trackingNumber} (IFF)`
+        : data.shipment.trackingNumber;
       const msg = data.booking.paymentStatus === 'paid'
-        ? `Booked & paid! Booking ${data.booking.bookingNumber} — tracking number ${data.shipment.trackingNumber}.`
-        : `Booked! Booking ${data.booking.bookingNumber} — tracking number ${data.shipment.trackingNumber}. Invoice will be sent.`;
+        ? `Booked & paid! Booking ${data.booking.bookingNumber} — tracking: ${tracking}`
+        : `Booked! Booking ${data.booking.bookingNumber} — tracking: ${tracking}. Invoice will be sent.`;
       alert(msg);
     } catch (err) {
       setBooking(prev => ({ ...prev, [r.quoteRateId]: 'error' }));
@@ -308,6 +323,25 @@ export default function QuotePage() {
       // Show success anyway for demo
     }
     setSpotSuccess(true);
+  }
+
+  function downloadLabel(quoteRateId) {
+    const lbl = labels[quoteRateId];
+    if (!lbl) return;
+    const mimeMap = { PDF: 'application/pdf', PNG: 'image/png', ZPLII: 'text/plain' };
+    const extMap = { PDF: 'pdf', PNG: 'png', ZPLII: 'zpl' };
+    const mime = mimeMap[lbl.docType] || 'application/octet-stream';
+    const ext = extMap[lbl.docType] || 'bin';
+    const binary = atob(lbl.encodedLabel);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `label_${lbl.trackingNumber}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function handleTypeChange(type) {
@@ -365,7 +399,10 @@ export default function QuotePage() {
       <div className={s.formCols}>
         <div>
           <div className={s.colLabel}>Origin</div>
-          <div className="field"><label>City</label><input placeholder="e.g. Toronto" value={origCity} onChange={e => { setOrigCity(e.target.value); setOriginValidation(null); }} /></div>
+          <div className="grid2">
+            <div className="field"><label>City</label><input placeholder="e.g. Toronto" value={origCity} onChange={e => { setOrigCity(e.target.value); setOriginValidation(null); }} /></div>
+            <div className="field"><label>Province / State</label><input placeholder="e.g. ON" value={origProvince} onChange={e => { setOrigProvince(e.target.value); setOriginValidation(null); }} /></div>
+          </div>
           <div className="grid2">
             <div className="field"><label>Postal / ZIP</label><input placeholder="M5V 3A8" value={origPostal} onChange={e => { setOrigPostal(e.target.value); setOriginValidation(null); }} /></div>
             <div className="field"><label>Country</label>
@@ -383,6 +420,7 @@ export default function QuotePage() {
               <strong>FedEx suggests: {originValidation.effectiveAddress.city}{originValidation.effectiveAddress.stateOrProvinceCode ? `, ${originValidation.effectiveAddress.stateOrProvinceCode}` : ''} {originValidation.effectiveAddress.postalCode}</strong>
               <button className={s.btnAcceptSuggestion} onClick={() => {
                 setOrigCity(originValidation.effectiveAddress.city || origCity);
+                if (originValidation.effectiveAddress.stateOrProvinceCode) setOrigProvince(originValidation.effectiveAddress.stateOrProvinceCode);
                 setOrigPostal(originValidation.effectiveAddress.postalCode || origPostal);
                 setOriginValidation({ ...originValidation, valid: true });
               }}>Accept suggestion</button>
@@ -393,7 +431,10 @@ export default function QuotePage() {
         </div>
         <div>
           <div className={s.colLabel}>Destination</div>
-          <div className="field"><label>City</label><input placeholder="e.g. Chicago" value={destCity} onChange={e => { setDestCity(e.target.value); setDestValidation(null); }} /></div>
+          <div className="grid2">
+            <div className="field"><label>City</label><input placeholder="e.g. Chicago" value={destCity} onChange={e => { setDestCity(e.target.value); setDestValidation(null); }} /></div>
+            <div className="field"><label>Province / State</label><input placeholder="e.g. IL" value={destProvince} onChange={e => { setDestProvince(e.target.value); setDestValidation(null); }} /></div>
+          </div>
           <div className="grid2">
             <div className="field"><label>Postal / ZIP</label><input placeholder="60601" value={destPostal} onChange={e => { setDestPostal(e.target.value); setDestValidation(null); }} /></div>
             <div className="field"><label>Country</label>
@@ -411,6 +452,7 @@ export default function QuotePage() {
               <strong>FedEx suggests: {destValidation.effectiveAddress.city}{destValidation.effectiveAddress.stateOrProvinceCode ? `, ${destValidation.effectiveAddress.stateOrProvinceCode}` : ''} {destValidation.effectiveAddress.postalCode}</strong>
               <button className={s.btnAcceptSuggestion} onClick={() => {
                 setDestCity(destValidation.effectiveAddress.city || destCity);
+                if (destValidation.effectiveAddress.stateOrProvinceCode) setDestProvince(destValidation.effectiveAddress.stateOrProvinceCode);
                 setDestPostal(destValidation.effectiveAddress.postalCode || destPostal);
                 setDestValidation({ ...destValidation, valid: true });
               }}>Accept suggestion</button>
@@ -546,7 +588,7 @@ export default function QuotePage() {
           </div>
           <div className="field" style={{ marginBottom: '20px' }}>
             <label>Special requirements or notes</label>
-            <textarea rows="3" placeholder="Dangerous goods class, temperature controlled, fragile, customs brokerage needed, insurance, etc." value={spotNotes} onChange={e => setSpotNotes(e.target.value)} />
+            <textarea rows="3" placeholder="Dangerous goods class, temperature controlled, fragile, customs brokerage needed, declared value, etc." value={spotNotes} onChange={e => setSpotNotes(e.target.value)} />
           </div>
 
           <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>Quoted rates are estimates and may be subject to adjustment based on actual shipment details and carrier surcharges.</div>
@@ -619,6 +661,11 @@ export default function QuotePage() {
                   >
                     {bookState === 'loading' ? 'Booking…' : bookState === 'booked' ? 'Booked ✓' : canBook ? 'Book this rate →' : 'Sign in to book'}
                   </button>
+                  {bookState === 'booked' && labels[r.quoteRateId] && (
+                    <button className={s.btnLabel} onClick={() => downloadLabel(r.quoteRateId)}>
+                      Download Label ({labels[r.quoteRateId].docType})
+                    </button>
+                  )}
                 </div>
               </div>
             );

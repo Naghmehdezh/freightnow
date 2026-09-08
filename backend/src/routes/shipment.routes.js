@@ -27,4 +27,12 @@ router.get('/:id', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/:id/label', authenticate, async (req, res, next) => {
+  try {
+    const label = await shipmentService.getShipmentLabel(req.params.id, req.user.id);
+    if (!label) return res.status(404).json({ error: { code: 'NO_LABEL', message: 'No label available for this shipment' } });
+    res.json(label);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

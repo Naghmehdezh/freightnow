@@ -115,6 +115,9 @@ async function bookWithCarrier(shipment, quote, selectedRate, company) {
 
   // Update shipment with carrier response
   const update = { carrierTrackingNumber: result.carrierTrackingNumber };
+  if (result.confirmationNumber) {
+    update.carrierConfirmationNumber = result.confirmationNumber;
+  }
   if (result.label?.encodedLabel) {
     update.labelBase64 = result.label.encodedLabel;
     update.labelDocType = result.label.docType || 'PDF';
@@ -177,6 +180,7 @@ function _buildCarrierDetails(quote, selectedRate, company) {
     labelSpecification: { imageType: 'PDF', labelStockType: 'PAPER_85X11_TOP_HALF_LABEL' },
     customerReference: quote.quoteNumber,
     totalPackageCount: quote.pieces || 1,
+    commodity: quote.commodity || null,
   };
 
   if (quote.dimL && quote.dimW && quote.dimH) {

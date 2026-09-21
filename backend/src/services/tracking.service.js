@@ -17,7 +17,9 @@ async function getTracking(trackingNumber) {
     try {
       const carrier = await getCarrier(shipment.carrierId || 'fedex');
       if (carrier) {
-        carrierData = await carrier.getTracking(shipment.carrierTrackingNumber);
+        // Prefer carrierConfirmationNumber for carriers that need it (e.g. CSA orderId)
+        const trackId = shipment.carrierConfirmationNumber || shipment.carrierTrackingNumber;
+        carrierData = await carrier.getTracking(trackId);
       }
     } catch (err) {
       console.error('[TRACKING] Carrier tracking failed:', err.message);

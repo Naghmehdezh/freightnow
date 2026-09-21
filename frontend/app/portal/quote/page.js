@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { fetchAPI } from '@/lib/api';
 import { CARRIERS } from '@/lib/carriers';
 import { FEDEX_DISCLAIMER } from '@/lib/fedexCompliance';
+
+const DHL_DISCLAIMER = 'DHL and the DHL logo are trademarks of Deutsche Post AG and are used by permission.';
 import CarrierLogo from '@/components/CarrierLogo';
 import s from './page.module.css';
 
@@ -254,7 +256,15 @@ export default function QuotePage() {
     }
 
     if (!quoteResults) {
-      quoteResults = CARRIERS.map(c => {
+      // Filter carriers by shipment type (CSA is LTL-only, DHL is envelope/parcel only)
+      const LTL_ONLY = ['csa', 'xpo', 'manitoulin', 'polaris'];
+      const NO_LTL = ['dhl'];
+      const eligible = CARRIERS.filter(c => {
+        if (currentType === 'ltl' && NO_LTL.includes(c.id)) return false;
+        if (currentType !== 'ltl' && LTL_ONLY.includes(c.id)) return false;
+        return true;
+      });
+      quoteResults = eligible.map(c => {
         const sim = simulateRate(c, currentType, weight, fc, orig, dest, activeAccessorials, pickupDate);
         return { carrier: c, ...sim, displayRate: Math.round(applyMarkup(sim.rate) * 100) / 100 };
       });
@@ -328,20 +338,17 @@ export default function QuotePage() {
   function downloadLabel(quoteRateId) {
     const lbl = labels[quoteRateId];
     if (!lbl) return;
-    const mimeMap = { PDF: 'application/pdf', PNG: 'image/png', ZPLII: 'text/plain' };
     const extMap = { PDF: 'pdf', PNG: 'png', ZPLII: 'zpl' };
-    const mime = mimeMap[lbl.docType] || 'application/octet-stream';
+    const mimeMap = { PDF: 'application/pdf', PNG: 'image/png', ZPLII: 'text/plain' };
     const ext = extMap[lbl.docType] || 'bin';
-    const binary = atob(lbl.encodedLabel);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: mime });
-    const url = URL.createObjectURL(blob);
+    const mime = mimeMap[lbl.docType] || 'application/octet-stream';
     const a = document.createElement('a');
-    a.href = url;
+    a.href = `data:${mime};base64,${lbl.encodedLabel}`;
     a.download = `label_${lbl.trackingNumber}.${ext}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   }
 
   function handleTypeChange(type) {
@@ -417,7 +424,7 @@ export default function QuotePage() {
           {originValidation && originValidation.valid === false && originValidation.effectiveAddress ? (
             <div className={s.validationSuggestion}>
               Origin address could not be verified as entered.
-              <strong>FedEx suggests: {originValidation.effectiveAddress.city}{originValidation.effectiveAddress.stateOrProvinceCode ? `, ${originValidation.effectiveAddress.stateOrProvinceCode}` : ''} {originValidation.effectiveAddress.postalCode}</strong>
+              <strong>Suggested: {originValidation.effectiveAddress.city}{originValidation.effectiveAddress.stateOrProvinceCode ? `, ${originValidation.effectiveAddress.stateOrProvinceCode}` : ''} {originValidation.effectiveAddress.postalCode}</strong>
               <button className={s.btnAcceptSuggestion} onClick={() => {
                 setOrigCity(originValidation.effectiveAddress.city || origCity);
                 if (originValidation.effectiveAddress.stateOrProvinceCode) setOrigProvince(originValidation.effectiveAddress.stateOrProvinceCode);
@@ -449,7 +456,7 @@ export default function QuotePage() {
           {destValidation && destValidation.valid === false && destValidation.effectiveAddress ? (
             <div className={s.validationSuggestion}>
               Destination address could not be verified as entered.
-              <strong>FedEx suggests: {destValidation.effectiveAddress.city}{destValidation.effectiveAddress.stateOrProvinceCode ? `, ${destValidation.effectiveAddress.stateOrProvinceCode}` : ''} {destValidation.effectiveAddress.postalCode}</strong>
+              <strong>Suggested: {destValidation.effectiveAddress.city}{destValidation.effectiveAddress.stateOrProvinceCode ? `, ${destValidation.effectiveAddress.stateOrProvinceCode}` : ''} {destValidation.effectiveAddress.postalCode}</strong>
               <button className={s.btnAcceptSuggestion} onClick={() => {
                 setDestCity(destValidation.effectiveAddress.city || destCity);
                 if (destValidation.effectiveAddress.stateOrProvinceCode) setDestProvince(destValidation.effectiveAddress.stateOrProvinceCode);
@@ -648,6 +655,7 @@ export default function QuotePage() {
                     {r.deliveryDate && <span className={`${s.riChip} ${s.riChipDelivery}`}>&#128197; Est. {r.deliveryDate}</span>}
                   </div>
                   {r.carrier.id === 'fedex' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>{FEDEX_DISCLAIMER}</div>}
+                  {r.carrier.id === 'dhl' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>{DHL_DISCLAIMER}</div>}
                 </div>
                 <div className={s.rr}>
                   <div className={s.rrAmount}>{sym}{r.displayRate.toFixed(2)}</div>
@@ -665,6 +673,9 @@ export default function QuotePage() {
                     <button className={s.btnLabel} onClick={() => downloadLabel(r.quoteRateId)}>
                       Download Label ({labels[r.quoteRateId].docType})
                     </button>
+                  )}
+                  {bookState === 'booked' && !labels[r.quoteRateId] && r.carrier.id === 'csa' && (
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>CSA does not provide shipping labels via API</div>
                   )}
                 </div>
               </div>

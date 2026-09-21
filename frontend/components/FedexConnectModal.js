@@ -5,11 +5,11 @@ import { FEDEX_DISCLAIMER, FEDEX_EULA_TEXT } from '@/lib/fedexCompliance';
 import CarrierLogo from './CarrierLogo';
 import s from './FedexConnectModal.module.css';
 
-const FACTOR2_METHODS = [
-  { id: 'pin_email', label: 'Email me a 6-digit code' },
-  { id: 'pin_sms', label: 'Text me a 6-digit code (SMS)' },
-  { id: 'pin_call', label: 'Call me with a 6-digit code' },
-  { id: 'invoice', label: 'Validate with a recent FedEx invoice' },
+const ALL_FACTOR2_METHODS = [
+  { id: 'pin_email', fedexOption: 'EMAIL', label: 'Email me a 6-digit code' },
+  { id: 'pin_sms', fedexOption: 'SMS', label: 'Text me a 6-digit code (SMS)' },
+  { id: 'pin_call', fedexOption: 'CALL', label: 'Call me with a 6-digit code' },
+  { id: 'invoice', fedexOption: null, label: 'Validate with a recent FedEx invoice' },
 ];
 
 export default function FedexConnectModal({ onClose, onConnected }) {
@@ -21,6 +21,7 @@ export default function FedexConnectModal({ onClose, onConnected }) {
   const [connection, setConnection] = useState(null);
 
   const [fedexAccountNumber, setFedexAccountNumber] = useState('');
+  const [customerName, setCustomerName] = useState('');
   const [address, setAddress] = useState({ street: '', city: '', province: '', postalCode: '', country: 'CA' });
 
   const [method, setMethod] = useState('pin_email');
@@ -46,10 +47,15 @@ export default function FedexConnectModal({ onClose, onConnected }) {
     try {
       const data = await fetchAPI('/api/fedex-account', {
         method: 'POST',
-        body: JSON.stringify({ fedexAccountNumber, address, eulaAccepted: true }),
+        body: JSON.stringify({ fedexAccountNumber, customerName: customerName || undefined, address, eulaAccepted: true }),
       });
       setConnection(data.connection);
-      setStep('factor2choice');
+      // Customer Service bypass — FedEx returned credentials directly
+      if (data.connection.status === 'verified') {
+        setStep('success');
+      } else {
+        setStep('factor2choice');
+      }
     } catch (err) {
       setError(err.error?.message || 'Could not start FedEx account connection.');
     } finally {
@@ -178,6 +184,7 @@ export default function FedexConnectModal({ onClose, onConnected }) {
               <label>FedEx account number (9 digits)</label>
               <input value={fedexAccountNumber} onChange={e => setFedexAccountNumber(e.target.value)} pattern="\d{9}" maxLength={9} required />
             </div>
+            <div className="field"><label>Customer name</label><input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Company or contact name" /></div>
             <div className="field"><label>Street address</label><input value={address.street} onChange={e => setAddress({ ...address, street: e.target.value })} required /></div>
             <div className="grid2">
               <div className="field"><label>City</label><input value={address.city} onChange={e => setAddress({ ...address, city: e.target.value })} required /></div>
@@ -204,7 +211,14 @@ export default function FedexConnectModal({ onClose, onConnected }) {
           <form onSubmit={handleFactor2Choice}>
             <div className={s.stepLabel}>Step 3 of 4 — Choose how to confirm your identity</div>
             {error && <div className={s.error}>{error}</div>}
-            {FACTOR2_METHODS.map(m => (
+            {ALL_FACTOR2_METHODS
+              .filter(m => {
+                // Always show invoice; show PIN methods only if FedEx says they're available
+                if (m.id === 'invoice') return true;
+                const opts = connection?.availablePinDeliveryOptions;
+                return !opts || !opts.length || opts.includes(m.fedexOption);
+              })
+              .map(m => (
               <label key={m.id} className={s.radioRow}>
                 <input type="radio" name="factor2" value={m.id} checked={method === m.id} onChange={() => setMethod(m.id)} />
                 {m.label}
@@ -221,7 +235,7 @@ export default function FedexConnectModal({ onClose, onConnected }) {
         {step === 'pinVerify' && (
           <form onSubmit={handleVerifyPin}>
             <div className={s.stepLabel}>Step 4 of 4 — Secure code validation</div>
-            <p className={s.hint}>Enter the 6-digit code we sent you.</p>
+            <p className={s.hint}>Enter the 6-digit secure code sent to you by FedEx.</p>
             {error && <div className={s.error}>{error}</div>}
             <div className="field">
               <label>6-digit secure code</label>

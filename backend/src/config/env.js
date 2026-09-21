@@ -22,10 +22,22 @@ module.exports = {
     },
     xpo: { apiKey: process.env.XPO_API_KEY },
     dayross: {
-      apiKey: process.env.DAYROSS_API_KEY,
-      division: process.env.DAYROSS_DIVISION,
+      email: process.env.DAYROSS_EMAIL,
+      password: process.env.DAYROSS_PASSWORD,
+      account: process.env.DAYROSS_ACCOUNT,
+      oauthBasic: process.env.DAYROSS_OAUTH_BASIC,
     },
     manitoulin: { apiKey: process.env.MANITOULIN_API_KEY },
     polaris: { apiKey: process.env.POLARIS_API_KEY },
+    dhl: {
+      username: process.env.DHL_USERNAME,
+      password: process.env.DHL_PASSWORD,
+      accountNumber: process.env.DHL_ACCOUNT_NUMBER,
+      importAccountNumber: process.env.DHL_IMPORT_ACCOUNT,
+    },
+    csa: {
+      username: process.env.CSA_USERNAME,
+      password: process.env.CSA_PASSWORD,
+    },
   },
 };

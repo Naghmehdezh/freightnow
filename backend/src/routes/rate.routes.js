@@ -10,11 +10,13 @@ const rateRequestSchema = z.object({
   shipmentType: z.enum(['envelope', 'parcel', 'ltl']),
   origin: z.object({
     city: z.string().optional(),
+    province: z.string().optional(),
     postalCode: z.string().optional(),
     country: z.string().min(2),
   }),
   destination: z.object({
     city: z.string().optional(),
+    province: z.string().optional(),
     postalCode: z.string().optional(),
     country: z.string().min(2),
   }),

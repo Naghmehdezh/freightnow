@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { fetchAPI } from '@/lib/api';
+import FedexConnectModal from '@/components/FedexConnectModal';
 import s from './page.module.css';
 
 export default function ProfilePage() {
@@ -12,6 +13,26 @@ export default function ProfilePage() {
   const [editingPassword, setEditingPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
+
+  // FedEx account connection state
+  const [fedexConnections, setFedexConnections] = useState([]);
+  const [showFedexModal, setShowFedexModal] = useState(false);
+
+  async function loadFedexConnections() {
+    try {
+      const data = await fetchAPI('/api/fedex-account');
+      setFedexConnections(data.connections || []);
+    } catch {}
+  }
+
+  async function handleDisconnectFedex(id) {
+    if (!confirm('Disconnect this FedEx account?')) return;
+    try {
+      await fetchAPI(`/api/fedex-account/${id}`, { method: 'DELETE' });
+      setSuccess('FedEx account disconnected.');
+      loadFedexConnections();
+    } catch {}
+  }
 
   useEffect(() => {
     async function load() {
@@ -31,6 +52,7 @@ export default function ProfilePage() {
       } catch {}
     }
     load();
+    loadFedexConnections();
   }, []);
 
   async function handleSaveProfile(e) {
@@ -151,6 +173,35 @@ export default function ProfilePage() {
               <button type="button" className={s.btnCancel} onClick={() => { setEditingPassword(false); setPassword({ current: '', newPass: '', confirm: '' }); }}>Cancel</button>
             </div>
           </form>
+        )}
+      </div>
+
+      <div className="section-card">
+        <div className={s.sectionHeader}>
+          <div className={s.sectionTitle}>FedEx Account</div>
+          {!fedexConnections.length && (
+            <button type="button" className={s.btnEdit} onClick={() => setShowFedexModal(true)}>Connect FedEx account</button>
+          )}
+        </div>
+        {!fedexConnections.length && (
+          <p className={s.hint}>Connect your FedEx account to start shipping with FedEx.</p>
+        )}
+        {fedexConnections.map(c => (
+          <div key={c._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0' }}>
+            <div>
+              <span style={{ fontWeight: 500 }}>Account ****{c.fedexAccountNumber?.slice(-4)}</span>
+              {c.status === 'verified' && <span style={{ color: 'var(--green)', marginLeft: 8 }}>Connected</span>}
+              {c.status === 'awaiting_factor2' && <span style={{ color: 'var(--amber)', marginLeft: 8 }}>Pending verification</span>}
+              {c.status === 'locked' && <span style={{ color: 'var(--red)', marginLeft: 8 }}>Locked</span>}
+            </div>
+            <button type="button" className={s.btnCancel} onClick={() => handleDisconnectFedex(c._id)}>Disconnect</button>
+          </div>
+        ))}
+        {showFedexModal && (
+          <FedexConnectModal
+            onClose={() => setShowFedexModal(false)}
+            onConnected={() => { setShowFedexModal(false); loadFedexConnections(); setSuccess('FedEx account connected successfully.'); }}
+          />
         )}
       </div>
 

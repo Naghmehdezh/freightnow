@@ -32,3 +32,14 @@ yarn-error.log*
 
 # SQLite dev database
 *.db
+
+# Playwright MCP temp files
+.playwright-mcp/
+
+# Carrier API test output (contains API responses)
+csa_test_output/
+dayross_test_output/
+dhl_test_output/
+fedex_test_output/
+fedex_test_output copy/
+fedex_test_output_Uzairs_account/

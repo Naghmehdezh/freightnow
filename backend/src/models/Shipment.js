@@ -4,6 +4,7 @@ const { Schema } = mongoose;
 const shipmentSchema = new Schema({
   trackingNumber: { type: String, required: true, unique: true }, // IFF internal (IFF-2026-00001)
   carrierTrackingNumber: String, // real carrier tracking (e.g. FedEx 794860006524)
+  carrierConfirmationNumber: String, // carrier-specific ID (e.g. CSA orderId for tracking)
   user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   company: { type: Schema.Types.ObjectId, ref: 'Company' }, // denormalized snapshot
   booking: { type: Schema.Types.ObjectId, ref: 'Booking', required: true, unique: true },

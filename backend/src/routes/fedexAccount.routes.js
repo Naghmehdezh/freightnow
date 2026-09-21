@@ -15,6 +15,7 @@ const startSchema = z.object({
     postalCode: z.string().min(1),
     country: z.string().min(2),
   }),
+  customerName: z.string().optional(),
   eulaAccepted: z.boolean(),
 });
 

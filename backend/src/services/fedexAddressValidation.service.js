@@ -6,7 +6,7 @@ async function validateAddress({ streetLines, city, stateOrProvinceCode, postalC
     token = await getToken();
   } catch (err) {
     console.error('[FEDEX-ADDR] Auth failed:', err.message);
-    return { valid: null, error: 'FedEx address validation unavailable', fallback: true };
+    return { valid: null, error: 'FedEx address validation unavailable', fallback: true, source: 'fedex' };
   }
 
   const body = {
@@ -37,21 +37,21 @@ async function validateAddress({ streetLines, city, stateOrProvinceCode, postalC
     if (!res.ok) {
       const errText = await res.text();
       console.error('[FEDEX-ADDR] API error:', res.status, errText);
-      return { valid: null, error: `FedEx API error (${res.status})`, fallback: true };
+      return { valid: null, error: `FedEx API error (${res.status})`, fallback: true, source: 'fedex' };
     }
 
     const data = await res.json();
     return parseValidationResponse(data, { city, postalCode, countryCode });
   } catch (err) {
     console.error('[FEDEX-ADDR] Request failed:', err.message);
-    return { valid: null, error: 'FedEx address validation unavailable', fallback: true };
+    return { valid: null, error: 'FedEx address validation unavailable', fallback: true, source: 'fedex' };
   }
 }
 
 function parseValidationResponse(data, original) {
   const resolved = data.output?.resolvedAddresses?.[0];
   if (!resolved) {
-    return { valid: false, error: 'Address could not be resolved', effectiveAddress: null, changes: [] };
+    return { valid: false, error: 'Address could not be resolved', effectiveAddress: null, changes: [], source: 'fedex' };
   }
 
   const classification = resolved.classification || 'UNKNOWN';
@@ -98,6 +98,7 @@ function parseValidationResponse(data, original) {
       addressType: attributes.AddressType || null,
       addressPrecision: attributes.AddressPrecision || null,
     },
+    source: 'fedex',
   };
 }
 

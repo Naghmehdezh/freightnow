@@ -13,6 +13,7 @@ const fedexAccountRoutes = require('./fedexAccount.routes');
 const addressRoutes = require('./address.routes');
 const quickbooksRoutes = require('./quickbooks.routes');
 const addressValidationRoutes = require('./addressValidation.routes');
+const pricingRulesRoutes = require('./pricingRules.routes');
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use('/fedex-account', fedexAccountRoutes);
 router.use('/addresses', addressRoutes);
 router.use('/quickbooks', quickbooksRoutes);
 router.use('/address-validation', addressValidationRoutes);
+router.use('/pricing-rules', pricingRulesRoutes);
 
 module.exports = router;

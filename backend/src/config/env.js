@@ -28,7 +28,10 @@ module.exports = {
       oauthBasic: process.env.DAYROSS_OAUTH_BASIC,
     },
     manitoulin: { apiKey: process.env.MANITOULIN_API_KEY },
-    polaris: { apiKey: process.env.POLARIS_API_KEY },
+    polaris: {
+      apiKey: process.env.POLARIS_API_KEY,
+      environment: process.env.POLARIS_ENVIRONMENT || 'test', // 'test' or 'production'
+    },
     dhl: {
       username: process.env.DHL_USERNAME,
       password: process.env.DHL_PASSWORD,

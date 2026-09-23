@@ -15,6 +15,20 @@ const quoteRateSchema = new Schema({
   estimatedDelivery: String,
   isLiveRate: { type: Boolean, default: false },
   isBestRate: { type: Boolean, default: false },
+
+  // Snapshot of the pricing engine's output at quote time, so a historical price stays
+  // reproducible even after the active PricingRuleSet changes later.
+  rulesVersion: Number,
+  markupPct: Number,
+  grossMargin: Number,
+  costCad: Number,
+  sellCad: Number,
+  fxRate: Number,
+  chargeableWt: Number,
+  densityPcf: Number,
+  estClass: Number,
+  dimGoverns: Boolean,
+  flags: [String],
 });
 
 module.exports = mongoose.model('QuoteRate', quoteRateSchema);

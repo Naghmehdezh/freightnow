@@ -12,7 +12,7 @@ const TrackingEvent = require('./models/TrackingEvent');
 const Claim = require('./models/Claim');
 const Invoice = require('./models/Invoice');
 const Carrier = require('./models/Carrier');
-const MarkupRule = require('./models/MarkupRule');
+const PricingRuleSet = require('./models/PricingRuleSet');
 const Address = require('./models/Address');
 const Payment = require('./models/Payment');
 const ClaimDocument = require('./models/ClaimDocument');
@@ -38,18 +38,25 @@ async function main() {
     await Carrier.create({ ...c, enabled: true, providesLiveRates: false });
   }
 
+  // Pricing policy — ported from the standalone Pricing Engine reference. Seed values are
+  // explicitly uncalibrated placeholders (matching that system's own honesty about it),
+  // replacing the old flat-percentage MarkupRule tiers.
+  await PricingRuleSet.create({
+    version: 1,
+    bands: [
+      { max: 40, mk: 175 }, { max: 75, mk: 145 }, { max: 125, mk: 125 },
+      { max: 250, mk: 105 }, { max: 500, mk: 85 }, { max: 1000, mk: 70 },
+      { max: 999999999, mk: 55 },
+    ],
+    adjusters: { xb: 5, intl: 12, low_density: 10, multi: 5 },
+    floors: { Envelope: 105, Package: 135, Skid: 250, LCL: 150, min_gp: 65, round: 5 },
+    dim_divisor: 139,
+    usdToCadRate: 1.40,
+    active: true,
+    note: 'Seed defaults — uncalibrated placeholders, ported from the Pricing Engine reference.',
+  });
+
   const now = new Date();
-  const tiers = [
-    { minAmount: 0, maxAmount: 100, markupMultiplier: 1.70 },
-    { minAmount: 100, maxAmount: 250, markupMultiplier: 1.55 },
-    { minAmount: 250, maxAmount: 500, markupMultiplier: 1.40 },
-    { minAmount: 500, maxAmount: 1000, markupMultiplier: 1.30 },
-    { minAmount: 1000, maxAmount: 2500, markupMultiplier: 1.20 },
-    { minAmount: 2500, maxAmount: null, markupMultiplier: 1.15 },
-  ];
-  for (const t of tiers) {
-    await MarkupRule.create({ ...t, effectiveFrom: now, isActive: true });
-  }
 
   // Company
   const company = await Company.create({

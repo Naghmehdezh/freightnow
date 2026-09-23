@@ -1,13 +1,50 @@
 const mongoose = require('mongoose');
 const { getAllCarriers, getCarrier } = require('../carriers');
-const { applyMarkup } = require('./markup.service');
+const { priceQuote } = require('./pricingEngine.service');
+const { getActiveRuleSet } = require('./pricingRules.service');
+const { detectScope } = require('../utils/shipmentScope');
 const Quote = require('../models/Quote');
 const QuoteRate = require('../models/QuoteRate');
 const { generateQuoteNumber } = require('../utils/trackingGenerator');
 const { endOfDay } = require('../utils/dateHelpers');
 
+// envelope/parcel -> courier mode (per-piece dim-weight); ltl -> ltl mode (scale weight,
+// density drives freight class). FTL/air/ocean are a separate staff-priced spot-rate flow and
+// never reach this function.
+const SHIPMENT_TYPE_TO_MODE = {
+  envelope: { mode: 'courier', packaging: 'Envelope' },
+  parcel: { mode: 'courier', packaging: 'Package' },
+  ltl: { mode: 'ltl', packaging: 'Skid' },
+};
+
+// Builds the pricing engine's inputs from a rate request. `weight` is the TOTAL shipment
+// weight, but the engine needs PER-PIECE weight for its dim-weight math — dividing here
+// reconstructs the correct per-piece figure without changing what "weight" means anywhere
+// else Quote/Shipment/Booking already consume it (as a total). This treats all pieces as
+// identical, since freightnow's quote form collects one L/W/H triple rather than a true
+// per-piece manifest — a pre-existing input-shape limit, not something this introduces.
+function buildPricingInputs(params, ruleSet) {
+  const { mode, packaging } = SHIPMENT_TYPE_TO_MODE[params.shipmentType] || SHIPMENT_TYPE_TO_MODE.ltl;
+  const scope = detectScope(params.origin.country, params.destination.country);
+  const pieces = params.pieces || 1;
+  const lines = [{
+    qty: pieces,
+    l: params.dimensions?.length || 0,
+    w: params.dimensions?.width || 0,
+    h: params.dimensions?.height || 0,
+    wt: params.weight / pieces,
+  }];
+  return { cost: null, scope, mode, packaging, lines, currency: params.currency || 'CAD', ruleSet };
+}
+
+function priceRate(rate, inputs) {
+  const { ruleSet, ...engineInput } = inputs;
+  return priceQuote({ ...engineInput, cost: rate }, ruleSet);
+}
+
 async function getAllRates(params, userId) {
-  const carriers = await getAllCarriers();
+  const [carriers, ruleSet] = await Promise.all([getAllCarriers(), getActiveRuleSet()]);
+  const inputs = buildPricingInputs(params, ruleSet);
 
   const results = await Promise.allSettled(
     carriers.map(async (carrier) => {
@@ -28,12 +65,11 @@ async function getAllRates(params, userId) {
     }
   }
 
-  // Apply markup and sort
-  const processedRates = await Promise.all(allRates.map(async (r) => ({
-    ...r,
-    baseRate: r.rate,
-    displayRate: await applyMarkup(r.rate),
-  })));
+  // Price each rate through the engine and sort
+  const processedRates = allRates.map((r) => {
+    const priced = priceRate(r.rate, inputs);
+    return { ...r, baseRate: r.rate, displayRate: priced.sell, pricingResult: priced };
+  });
   processedRates.sort((a, b) => a.displayRate - b.displayRate);
 
   // Mark best rate
@@ -94,6 +130,17 @@ async function getAllRates(params, userId) {
           estimatedDelivery: r.deliveryDate,
           isLiveRate: r.isLive || false,
           isBestRate: r.isBestRate || false,
+          rulesVersion: r.pricingResult.rulesVersion,
+          markupPct: r.pricingResult.markupPct,
+          grossMargin: r.pricingResult.grossMargin,
+          costCad: r.pricingResult.costCad,
+          sellCad: r.pricingResult.sellCad,
+          fxRate: r.pricingResult.fxRate,
+          chargeableWt: r.pricingResult.chargeableWt,
+          densityPcf: r.pricingResult.densityPcf,
+          estClass: r.pricingResult.estClass,
+          dimGoverns: r.pricingResult.dimGoverns,
+          flags: r.pricingResult.flags,
         }], { session }).then(([doc]) => doc)));
 
         processedRates.forEach((r, i) => { r.quoteRateId = createdRates[i].id; });
@@ -120,6 +167,7 @@ async function getAllRates(params, userId) {
       estimatedDelivery: r.deliveryDate,
       isLiveRate: r.isLive || false,
       isBestRate: r.isBestRate || false,
+      flags: r.pricingResult.flags,
     })),
   };
 }
@@ -128,13 +176,20 @@ async function getSingleCarrierRate(carrierId, params) {
   const carrier = await getCarrier(carrierId);
   if (!carrier) return null;
 
+  const ruleSet = await getActiveRuleSet();
+  const inputs = buildPricingInputs(params, ruleSet);
+
   const rates = await carrier.getRates(params);
-  return Promise.all(rates.map(async (r) => ({
-    rate: await applyMarkup(r.rate),
-    serviceName: r.serviceName,
-    transitDays: r.transitDays,
-    deliveryDate: r.deliveryDate,
-  })));
+  return rates.map((r) => {
+    const priced = priceRate(r.rate, inputs);
+    return {
+      rate: priced.sell,
+      serviceName: r.serviceName,
+      transitDays: r.transitDays,
+      deliveryDate: r.deliveryDate,
+      flags: priced.flags,
+    };
+  });
 }
 
 module.exports = { getAllRates, getSingleCarrierRate };

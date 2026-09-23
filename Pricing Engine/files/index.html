@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IFF Cargo — Quoting</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root{--ink:#12232e;--ink-2:#33505f;--paper:#eef1f0;--card:#fff;--rule:#c9d3d3;--signal:#00635d;--alert:#b5411f;--warn:#b8761f;--mute:#7a8b92}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:1160px;margin:0 auto;padding:20px}
+
+  /* login */
+  .login{max-width:340px;margin:9vh auto;padding:20px}
+  .login h1{font-size:20px;margin:0 0 4px}
+  .login p{color:var(--mute);font-size:12.5px;margin:0 0 20px}
+  .login .card{padding:20px}
+
+  header{border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:22px;display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap}
+  h1{font-size:19px;font-weight:700;margin:0}
+  .who{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--mute);display:flex;align-items:center;gap:10px}
+  .tabs{display:flex;gap:2px;margin-bottom:18px;border-bottom:1px solid var(--rule)}
+  .tab{padding:8px 15px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);cursor:pointer;border:1px solid transparent;border-bottom:none;background:none}
+  .tab.on{background:var(--card);border-color:var(--rule);color:var(--signal);border-radius:3px 3px 0 0;margin-bottom:-1px}
+
+  .cols{display:grid;grid-template-columns:1fr 348px;gap:20px;align-items:start}
+  @media(max-width:940px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--rule);border-radius:3px;padding:16px 18px;margin-bottom:18px}
+  .card h2{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--mute);margin:0 0 14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  label{display:block;font-size:11px;font-weight:600;color:var(--ink-2);margin-bottom:4px}
+  input,select{width:100%;padding:8px 9px;border:1px solid var(--rule);border-radius:2px;background:#fbfcfc;font-family:'IBM Plex Mono',monospace;font-size:13.5px;color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--signal);outline-offset:-1px;background:#fff}
+  .hint{font-size:10.5px;color:var(--mute);margin-top:3px;font-family:'IBM Plex Mono',monospace}
+  button{background:none;border:1px solid var(--rule);border-radius:2px;padding:7px 13px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2);cursor:pointer}
+  button:hover{border-color:var(--signal);color:var(--signal)}
+  button.go{background:var(--signal);border-color:var(--signal);color:#fff}
+  button.go:hover{background:#004f4a;color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .full{width:100%}
+
+  table{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:12px}
+  th{text-align:right;font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);font-weight:600;padding:0 7px 7px;border-bottom:1px solid var(--rule);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:6px 7px;border-bottom:1px solid #eef1f1;text-align:right;white-space:nowrap}
+  table.items{table-layout:fixed}
+  table.items th{text-align:center}
+  table.items td{padding:4px 4px}
+  table.items input{padding:7px 6px;text-align:center}
+  table.items col.c-qty{width:11%}
+  table.items col.c-dim{width:14%}
+  table.items col.c-wt{width:16%}
+  table.items col.c-vol{width:23%}
+  table.items col.c-del{width:5%}
+  td.calc{text-align:right;color:var(--ink-2);font-size:11.5px;padding-right:7px}
+  td.calc b{color:var(--signal)}
+  .xbtn{background:none;border:none;color:var(--mute);cursor:pointer;font-size:16px;padding:0 4px}
+  .xbtn:hover{color:var(--alert)}
+  .totals{margin-top:11px;padding-top:10px;border-top:1px solid var(--rule);display:flex;gap:20px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--mute)}
+  .totals b{color:var(--ink);font-weight:600}
+  .up{color:var(--signal);font-weight:600}.dn{color:var(--alert);font-weight:600}
+  .n{color:var(--mute)}
+
+  .slip{background:var(--ink);color:#e9efee;border-radius:3px;padding:18px 20px;position:relative;overflow:hidden}
+  .slip:before{content:'';position:absolute;left:0;right:0;bottom:0;height:6px;background:repeating-linear-gradient(90deg,var(--signal) 0 9px,transparent 9px 18px)}
+  .slip h2{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:#7fa5a1;margin:0 0 6px;font-weight:600}
+  .price{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:40px;letter-spacing:-.03em;line-height:1;color:#fff;margin:2px 0}
+  .price small{font-size:16px;color:#7fa5a1;font-weight:400;margin-right:3px;vertical-align:.35em}
+  .altprice{font-family:'IBM Plex Mono',monospace;font-size:15px;color:#7fa5a1;margin:5px 0 1px}
+  .altprice b{color:#cfe0dd;font-weight:600}
+  .subline{font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9fbcb8;margin-bottom:15px}
+  .brk{border-top:1px solid #2c4450;padding-top:11px;margin-bottom:13px}
+  .brk div{display:flex;justify-content:space-between;gap:12px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:3px 0}
+  .brk span:first-child{color:#8fadaa}
+  .brk b{font-weight:500;color:#fff}
+  .flags{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .flag{font-size:11.5px;padding:7px 9px;border-radius:2px;line-height:1.35;background:#1d3440;border-left:3px solid var(--signal);color:#cfe0dd}
+  .save{border-top:1px solid #2c4450;padding-top:13px}
+  .save label{color:#8fadaa;font-size:10.5px}
+  .save input,.save select{background:#1d3440;border-color:#2c4450;color:#fff;font-size:13px}
+  .save .row{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
+  .save button{width:100%;margin-top:3px}
+  .saved{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7fa5a1;text-align:center;margin-top:8px;min-height:15px}
+
+  .msg{font-family:'IBM Plex Mono',monospace;font-size:11.5px;padding:9px 11px;border-radius:2px;margin-bottom:12px;line-height:1.45}
+  .msg.err{background:#f7e4dd;color:#8a3116}
+  .msg.ok{background:#dcece9;color:#004f4a}
+  .msg.warn{background:#f6ead6;color:#7a4f10}
+  .stat{display:flex;gap:22px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--mute);margin-bottom:14px}
+  .stat b{color:var(--ink);font-weight:600;display:block;font-size:16px}
+  .hide{display:none}
+  .note{font-size:11.5px;color:var(--mute);margin-top:11px;line-height:1.5}
+  .geo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:700px){.geo{grid-template-columns:1fr}}
+  .geo fieldset{border:1px solid var(--rule);border-radius:2px;padding:10px 13px 13px;margin:0}
+  .geo legend{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--signal);padding:0 5px}
+  .geo .row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .err{font-size:10px;color:var(--alert);margin-top:3px;font-family:'IBM Plex Mono',monospace}
+  input.bad{border-color:var(--alert);background:#fdf4f1}
+  .lanehist{margin-top:13px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-2);
+            background:#f3f8f7;border-left:3px solid var(--signal);padding:9px 11px;border-radius:2px;display:none}
+  .lanehist b{color:var(--signal)}
+  .toggles{display:flex;gap:9px}
+  .tg{display:inline-flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+  .tg button{border:none;border-radius:0;padding:5px 11px;font-size:10px;letter-spacing:.08em;background:#fbfcfc;color:var(--mute)}
+  .tg button+button{border-left:1px solid var(--rule)}
+  .tg button.on{background:var(--signal);color:#fff}
+  .tg button:hover{color:var(--ink)}
+  .tg button.on:hover{color:#fff}
+  .tg-dark{border-color:#2c4450}
+  .tg-dark button{background:#1d3440;color:#7fa5a1;padding:3px 8px;font-size:9.5px}
+  .tg-dark button+button{border-left-color:#2c4450}
+  .tg-dark button.on{background:var(--signal);color:#fff}
+  .pager{display:flex;align-items:center;gap:11px;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--mute);flex-wrap:wrap}
+  .pager button{padding:5px 10px}
+  .pager .grow{flex:1}
+  .pager select{width:auto;padding:4px 7px;font-size:11px}
+  .subhead{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);margin-bottom:7px}
+  tr.void td{color:var(--mute);text-decoration:line-through}
+  tr.void td:last-child{text-decoration:none}
+  .cfg{background:#33291f;color:#f2ddc9;padding:14px 18px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<!-- ============ CONFIG — paste your two values here ============ -->
+<script>
+  // ===== Fill these in once, then save. =====
+  // Project URL: shown on the Supabase Project Overview page. No trailing slash.
+  // Anon key:    Project Settings > API Keys > the one marked "anon public".
+  const SUPABASE_URL  = 'PASTE_YOUR_PROJECT_URL_HERE';
+  const SUPABASE_ANON = 'PASTE_YOUR_ANON_KEY_HERE';
+</script>
+
+<div id="cfgWarn" class="cfg hide">
+  Not configured yet. Open this file in a text editor, find the two
+  PASTE_YOUR_... lines near the top, and replace them with your Project URL
+  and anon key from Supabase.
+</div>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginView" class="login hide">
+  <h1>IFF Cargo Quoting</h1>
+  <p>Sign in with your work email.</p>
+  <div class="card">
+    <div id="loginMsg"></div>
+    <div style="margin-bottom:11px"><label>Email</label><input type="email" id="email" autocomplete="username"></div>
+    <div style="margin-bottom:14px"><label>Password</label><input type="password" id="password" autocomplete="current-password"></div>
+    <button class="go full" id="loginBtn">Sign in</button>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appView" class="wrap hide">
+  <header>
+    <div><h1>IFF Cargo Quoting</h1></div>
+    <div class="who"><span id="whoami"></span><button id="signOut">Sign out</button></div>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-view="quote">New quote</button>
+    <button class="tab" data-view="mine">My quotes</button>
+    <button class="tab hide" data-view="admin" id="adminTab">Admin</button>
+    <button class="tab hide" data-view="customers" id="custTab">Customers</button>
+  </div>
+
+  <!-- ---------- QUOTE ---------- -->
+  <div id="view-quote">
+    <div id="editBanner" class="msg warn hide" style="margin-bottom:16px"></div>
+    <div class="cols">
+      <div>
+        <div class="card">
+          <h2>Shipment</h2>
+          <div class="grid">
+            <div><label id="costLabel">Carrier cost (CAD)</label><input type="number" id="cost" step="0.01" min="0" placeholder="0.00"></div>
+            <div><label>Customer</label>
+              <input type="text" id="custSearch" placeholder="type to filter" style="margin-bottom:5px">
+              <select id="customer"><option value="">— select —</option></select>
+            </div>
+            <div><label>Mode</label><select id="mode">
+              <option value="courier" selected>Courier</option>
+              <option value="ltl">LTL</option>
+              <option value="lcl">LCL ocean</option>
+            </select></div>
+            <div id="scopeWrap"><label>Scope</label><select id="scope">
+              <option value="dom">Domestic</option><option value="xb" selected>Canada / US</option><option value="intl">International</option>
+            </select></div>
+            <div id="pkgWrap"><label>Packaging</label><select id="pkg"></select></div>
+            <div><label>Currency</label><select id="currency">
+              <option value="CAD" selected>CAD</option><option value="USD">USD</option>
+            </select></div>
+            <div id="fxWrap"><label>USD → CAD rate</label>
+              <input type="number" id="fx" step="0.0001" min="0.5">
+              <div class="hint" id="fxHint"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Lane <span class="n" style="font-weight:400;text-transform:none;letter-spacing:0">recorded for reporting — does not affect the price</span></h2>
+          <div class="geo">
+            <fieldset>
+              <legend>Origin</legend>
+              <div class="row">
+                <div><label>Country</label><select id="oCountry">
+                  <option value="CA">Canada</option><option value="US" selected>United States</option><option value="XX">Other</option>
+                </select></div>
+                <div><label>Prov / State</label><input type="text" id="oRegion" maxlength="2" style="text-transform:uppercase"></div>
+                <div><label>Postal / ZIP</label><input type="text" id="oPostal" style="text-transform:uppercase">
+                  <div class="err" id="oPostalErr"></div></div>
+                <div><label>City <span class="n">optional</span></label><input type="text" id="oCity"></div>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>Destination</legend>
+              <div class="row">
+                <div><label>Country</label><select id="dCountry">
+                  <option value="CA" selected>Canada</option><option value="US">United States</option><option value="XX">Other</option>
+                </select></div>
+                <div><label>Prov / State</label><input type="text" id="dRegion" maxlength="2" style="text-transform:uppercase"></div>
+                <div><label>Postal / ZIP</label><input type="text" id="dPostal" style="text-transform:uppercase">
+                  <div class="err" id="dPostalErr"></div></div>
+                <div><label>Delivery</label><select id="dDelivery">
+                  <option value="unknown">Not known</option>
+                  <option value="commercial">Commercial</option>
+                  <option value="residential">Residential</option>
+                </select></div>
+              </div>
+              <div style="margin-top:9px"><label>City <span class="n">optional</span></label><input type="text" id="dCity"></div>
+            </fieldset>
+          </div>
+          <div id="laneHist" class="lanehist"></div>
+        </div>
+
+        <div class="card">
+          <h2>Line items
+            <span class="toggles">
+              <span class="tg" id="tgDim"><button data-dim="in" class="on">IN</button><button data-dim="cm">CM</button></span>
+              <span class="tg" id="tgWt"><button data-wt="lb" class="on">LBS</button><button data-wt="kg">KGS</button></span>
+            </span>
+          </h2>
+          <table class="items">
+            <colgroup>
+              <col class="c-qty"><col class="c-dim"><col class="c-dim"><col class="c-dim">
+              <col class="c-wt"><col class="c-vol"><col class="c-del">
+            </colgroup>
+            <thead><tr>
+              <th>Qty</th><th>L</th><th>W</th><th>H</th><th>Wt / pc</th><th>Volumetric</th><th></th>
+            </tr></thead>
+            <tbody id="lines"></tbody>
+          </table>
+          <input type="hidden" id="dimUnit" value="in"><input type="hidden" id="wtUnit" value="lb">
+          <div style="margin-top:9px"><button onclick="addLine()">+ Add line</button></div>
+          <div class="totals" id="totals"></div>
+          <div style="margin-top:14px;display:flex;gap:9px">
+            <button class="go" id="priceBtn">Get price</button>
+            <button id="clearBtn">New quote</button>
+          </div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="slip">
+          <h2>Recommended sell</h2>
+          <div class="price"><small>$</small><span id="sell">—</span></div>
+          <div class="altprice" id="altPrice"></div>
+          <div class="subline" id="sellSub">Enter a cost and press Get price</div>
+          <div class="brk" id="brk"></div>
+          <div class="flags" id="flags"></div>
+          <div class="save" id="saveBox" style="display:none">
+            <div class="row">
+              <div>
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                  <span>Final sell</span>
+                  <span class="tg tg-dark" id="tgFinalCur"></span>
+                </label>
+                <input type="number" id="finalSell" step="0.01" min="0">
+              </div>
+              <div><label>Reference</label><input type="text" id="ref" placeholder="optional"></div>
+            </div>
+            <div class="saved" id="finalAlt" style="margin:-4px 0 8px;text-align:left"></div>
+            <div style="margin-bottom:9px">
+              <label>If different from recommended</label>
+              <select id="reason">
+                <option value="">— matched the recommendation —</option>
+                <option value="market">Competitive pressure</option>
+                <option value="contract">Contract or tier rate</option>
+                <option value="incomplete">Carrier quote incomplete</option>
+                <option value="oneoff">One-off / relationship</option>
+                <option value="handling">Rush or difficult handling</option>
+              </select>
+            </div>
+            <button class="go" id="saveBtn">Save quote</button>
+            <div class="saved" id="savedMsg"></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ---------- MY QUOTES ---------- -->
+  <div id="view-mine" class="hide">
+    <div class="card">
+      <h2>My recent quotes <button onclick="loadMine(true)">Refresh</button></h2>
+      <div class="stat" id="mineStat"></div>
+      <table>
+        <thead><tr><th>Date</th><th>Customer</th><th>Mode</th><th>Cost</th><th>Engine</th><th>Final</th><th>Markup</th><th>Note</th><th></th></tr></thead>
+        <tbody id="mineRows"></tbody>
+      </table>
+      <div class="pager" id="minePager"></div>
+    </div>
+  </div>
+
+  <!-- ---------- CUSTOMERS (admin) ---------- -->
+  <div id="view-customers" class="hide">
+    <div class="card">
+      <h2>Add a customer</h2>
+      <div id="custMsg"></div>
+      <div class="grid">
+        <div><label>Name</label><input type="text" id="newCustName" placeholder="as it should appear to staff"></div>
+        <div><label>Account code (optional)</label><input type="text" id="newCustCode"></div>
+        <div style="display:flex;align-items:flex-end"><button class="go full" onclick="addCustomer()">Add customer</button></div>
+      </div>
+      <div class="note">Names are matched ignoring case and extra spaces, so the same account can't be entered twice under different spellings.</div>
+    </div>
+    <div class="card">
+      <h2>Customer list <button onclick="loadCustomerAdmin(true)">Refresh</button></h2>
+      <table>
+        <thead><tr><th>Name</th><th>Code</th><th>Status</th><th>Quotes</th><th></th></tr></thead>
+        <tbody id="custAdminRows"></tbody>
+      </table>
+      <div class="pager" id="custPager"></div>
+      <div class="note">Retiring an account hides it from the quoting dropdown but keeps its history in the reports.</div>
+    </div>
+  </div>
+
+  <!-- ---------- ADMIN ---------- -->
+  <div id="view-admin" class="hide">
+    <div class="card">
+      <h2>Calibration
+        <span>
+          <label style="display:inline;margin:0 6px 0 0;font-weight:400">months</label>
+          <input type="number" id="calMonths" value="12" style="width:64px;display:inline-block">
+          <label style="display:inline;margin:0 6px 0 12px;font-weight:400">min n</label>
+          <input type="number" id="calMinN" value="30" style="width:64px;display:inline-block">
+          <button onclick="loadCalibration()">Run report</button>
+        </span>
+      </h2>
+      <div id="calMsg"></div>
+      <table>
+        <thead><tr><th>Band</th><th>Current</th><th>Quotes</th><th>Median</th><th>P25</th><th>P75</th><th>Spread</th><th>Reps</th><th>Proposed</th><th>Status</th></tr></thead>
+        <tbody id="calRows"></tbody>
+      </table>
+      <div id="publishBox" class="hide" style="margin-top:14px">
+        <label>Bands to publish — edit any value before publishing</label>
+        <input type="text" id="publishBands" style="font-size:12px">
+        <div style="margin-top:9px;display:flex;gap:9px;flex-wrap:wrap">
+          <input type="text" id="publishNote" placeholder="note, e.g. March calibration" style="flex:1;min-width:180px">
+          <button class="go" onclick="publishRules()">Load into rules editor</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Current rules
+        <span>
+          <button onclick="loadRules()">Reload</button>
+          <button class="go" onclick="publishEdited()">Publish changes</button>
+        </span>
+      </h2>
+      <div id="rulesMsg"></div>
+      <div id="rulesMeta" class="stat"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px" id="rulesGrid">
+        <div>
+          <div class="subhead">Margin bands — markup added to carrier cost</div>
+          <table><thead><tr><th>Band ceiling</th><th>Markup %</th><th></th></tr></thead>
+            <tbody id="bandEdit"></tbody></table>
+          <div style="margin-top:9px"><button onclick="addBand()">+ Add band</button></div>
+          <div class="note">Each row covers costs up to its ceiling. The last row must stay very large so nothing falls off the top.</div>
+        </div>
+        <div>
+          <div class="subhead">Adjusters — extra percentage points on the band</div>
+          <table><tbody>
+            <tr><td>Canada / US shipment</td><td><input type="number" id="rXb" style="width:90px"></td></tr>
+            <tr><td>International shipment</td><td><input type="number" id="rIntl" style="width:90px"></td></tr>
+            <tr><td>Density under 6 pcf</td><td><input type="number" id="rDens" style="width:90px"></td></tr>
+            <tr><td>Four or more pieces</td><td><input type="number" id="rMulti" style="width:90px"></td></tr>
+          </tbody></table>
+          <div class="subhead" style="margin-top:18px">Floors — the price never falls below these</div>
+          <table><tbody>
+            <tr><td>Minimum sell, envelope</td><td><input type="number" id="fEnv" style="width:90px"></td></tr>
+            <tr><td>Minimum sell, package</td><td><input type="number" id="fPkg" style="width:90px"></td></tr>
+            <tr><td>Minimum sell, skid</td><td><input type="number" id="fSkid" style="width:90px"></td></tr>
+            <tr><td>Minimum sell, LCL (CAD)</td><td><input type="number" id="fLcl" style="width:90px"></td></tr>
+            <tr><td>Minimum gross margin</td><td><input type="number" id="fGp" style="width:90px"></td></tr>
+            <tr><td>Round price up to</td><td><input type="number" id="fRound" style="width:90px"></td></tr>
+            <tr><td>Dim divisor</td><td><input type="number" id="fDiv" style="width:90px"></td></tr>
+          </tbody></table>
+          <div class="subhead" style="margin-top:18px">Exchange rate</div>
+          <table><tbody>
+            <tr><td>Default USD → CAD</td>
+              <td><input type="number" id="sFx" step="0.0001" style="width:90px"></td>
+              <td><button onclick="saveFx()" style="padding:3px 8px">save</button></td></tr>
+          </tbody></table>
+          <div class="note">Saved separately from the rule versions. Staff can override it on an individual quote.</div>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <label>Note for this version</label>
+        <input type="text" id="rulesNote" placeholder="why you changed it — shows in the version history">
+      </div>
+      <div class="note">Publishing creates a new version and retires the current one. Nothing is overwritten, so any past quote can still be traced to the rules that priced it.</div>
+    </div>
+
+    <div class="card">
+      <h2>Consistency by rep <button onclick="loadView('rep_consistency','repRows',['full_name','quotes','median_markup','spread','overrides','override_pct'])">Refresh</button></h2>
+      <table>
+        <thead><tr><th>Rep</th><th>Quotes</th><th>Median mk</th><th>Spread</th><th>Overrides</th><th>Override %</th></tr></thead>
+        <tbody id="repRows"></tbody>
+      </table>
+      <div class="note">Spread is the gap between their 25th and 75th percentile markup. Wider means more variation shipment to shipment.</div>
+    </div>
+
+    <div class="card">
+      <h2>Consistency by customer <button onclick="loadView('customer_consistency','custRows',['customer','quotes','reps','median_markup','p25','p75','spread','gross_margin'])">Refresh</button></h2>
+      <table>
+        <thead><tr><th>Customer</th><th>Quotes</th><th>Reps</th><th>Median mk</th><th>P25</th><th>P75</th><th>Spread</th><th>Gross margin</th></tr></thead>
+        <tbody id="custRows"></tbody>
+      </table>
+      <div class="note">Accounts with at least 3 quotes in the last 12 months. A wide spread on one account means it's being priced differently depending on who picks up the phone.</div>
+    </div>
+
+    <div class="card">
+      <h2>Lane history <button onclick="loadView('lane_summary','laneRows',['lane','mode','quotes','median_cost','median_markup','cost_spread','last_quoted'])">Refresh</button></h2>
+      <table>
+        <thead><tr><th>Lane</th><th>Mode</th><th>Quotes</th><th>Median cost</th><th>Median markup</th><th>Cost spread</th><th>Last</th></tr></thead>
+        <tbody id="laneRows"></tbody>
+      </table>
+      <div class="note">Zone to zone, last 18 months, two or more quotes. A lane needs roughly five before its median is worth leaning on.</div>
+    </div>
+
+    <div class="card">
+      <h2>All quotes <button onclick="loadAllQuotes(true)">Refresh</button></h2>
+      <table>
+        <thead><tr><th>Date</th><th>Rep</th><th>Customer</th><th>Cost</th><th>Engine</th><th>Final</th><th>Markup</th><th>Reason</th><th>v</th><th></th></tr></thead>
+        <tbody id="allRows"></tbody>
+      </table>
+      <div class="pager" id="allPager"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let sb, me = null, lastQuote = null, customers = [], finalCur = 'CAD';
+let editingId = null;   // set when correcting an existing quote
+let lines = [{qty:'1',l:'',w:'',h:'',wt:''}];
+const $ = id => document.getElementById(id);
+const money = n => Number(n).toLocaleString('en-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num = v => { const n = parseFloat(v); return isFinite(n) && n>0 ? n : 0; };
+const esc = s => String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- boot ---------- */
+if(SUPABASE_URL.startsWith('PASTE')){
+  $('cfgWarn').classList.remove('hide');
+}else{
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  sb.auth.getSession().then(({data})=> data.session ? onSignedIn() : showLogin());
+}
+function showLogin(){ $('loginView').classList.remove('hide'); $('appView').classList.add('hide'); }
+
+$('loginBtn').addEventListener('click', async ()=>{
+  $('loginMsg').innerHTML=''; $('loginBtn').disabled=true;
+  const {error} = await sb.auth.signInWithPassword({
+    email: $('email').value.trim(), password: $('password').value
+  });
+  $('loginBtn').disabled=false;
+  if(error){ $('loginMsg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  onSignedIn();
+});
+$('password').addEventListener('keydown', e=>{ if(e.key==='Enter') $('loginBtn').click(); });
+$('signOut').addEventListener('click', async ()=>{ await sb.auth.signOut(); location.reload(); });
+
+async function onSignedIn(){
+  const {data:{user}} = await sb.auth.getUser();
+  const {data:prof, error} = await sb.from('profiles')
+    .select('full_name, role, active').eq('id', user.id).maybeSingle();
+
+  if(error || !prof || !prof.active){
+    $('loginView').classList.remove('hide');
+    $('loginMsg').innerHTML = '<div class="msg err">This account has no access. Ask Uzair to set it up.</div>';
+    await sb.auth.signOut();
+    return;
+  }
+  me = prof;
+  $('loginView').classList.add('hide');
+  $('appView').classList.remove('hide');
+  $('whoami').textContent = `${prof.full_name} · ${prof.role}`;
+  if(prof.role === 'admin'){
+    $('adminTab').classList.remove('hide');
+    $('custTab').classList.remove('hide');
+  }
+  syncPackaging(); renderLines(); loadCustomers(); loadFx();
+  ['oPostal','dPostal','oRegion','dRegion'].forEach(id=>
+    $(id).addEventListener('input', ()=>{
+      checkPostal('oPostal','oCountry','oPostalErr');
+      checkPostal('dPostal','dCountry','dPostalErr');
+      refreshLaneHistory();
+    }));
+  ['oCountry','dCountry'].forEach(id=>$(id).addEventListener('change', ()=>{
+    checkPostal('oPostal','oCountry','oPostalErr');
+    checkPostal('dPostal','dCountry','dPostalErr');
+    refreshLaneHistory();
+  }));
+  $('mode').addEventListener('change', refreshLaneHistory);
+}
+
+/* ---------- tabs ---------- */
+$('tabs').addEventListener('click', e=>{
+  const t = e.target.closest('.tab'); if(!t) return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on');
+  ['quote','mine','admin','customers'].forEach(v=>$('view-'+v).classList.toggle('hide', v!==t.dataset.view));
+  if(t.dataset.view==='mine') loadMine();
+  if(t.dataset.view==='admin'){ loadRules(); loadCalibration(); loadAllQuotes();
+    loadView('lane_summary','laneRows',['lane','mode','quotes','median_cost','median_markup','cost_spread','last_quoted']); }
+  if(t.dataset.view==='customers') loadCustomerAdmin();
+});
+
+/* ---------- packaging follows mode ---------- */
+const PKG_BY_MODE = {courier:['Envelope','Package'], ltl:['Skid'], lcl:['LCL']};
+function syncPackaging(){
+  const mode = $('mode').value, isLcl = mode==='lcl';
+  const allowed = PKG_BY_MODE[mode];
+  const keep = allowed.includes($('pkg').value) ? $('pkg').value : allowed[allowed.length-1];
+  $('pkg').innerHTML = allowed.map(o=>`<option${o===keep?' selected':''}>${o}</option>`).join('');
+  $('pkg').disabled = allowed.length===1;
+
+  // LCL is international by definition and packaging is irrelevant
+  $('scopeWrap').style.display = isLcl ? 'none' : '';
+  $('pkgWrap').style.display   = isLcl ? 'none' : '';
+  if(isLcl){ $('scope').value = 'intl'; $('currency').value = 'USD'; }
+  syncCurrency();
+}
+function syncCurrency(){
+  const usd = $('currency').value==='USD';
+  $('fxWrap').style.display = usd ? '' : 'none';
+  $('costLabel').textContent = `Carrier cost (${usd?'USD':'CAD'})`;
+}
+
+/* ---------- lane ---------- */
+const POSTAL = {
+  CA:{re:/^[A-Z]\d[A-Z] ?\d[A-Z]\d$/i, msg:'Format A1A 1A1'},
+  US:{re:/^\d{5}(-\d{4})?$/,           msg:'Format 12345'},
+  XX:{re:/.+/,                          msg:''}
+};
+function checkPostal(inputId, countryId, errId){
+  const v = $(inputId).value.trim(), rule = POSTAL[$(countryId).value] || POSTAL.XX;
+  const ok = !v || rule.re.test(v);
+  $(inputId).classList.toggle('bad', !ok);
+  $(errId).textContent = ok ? '' : rule.msg;
+  return ok;
+}
+function laneJson(){
+  return {
+    origin_country: $('oCountry').value, origin_region: $('oRegion').value.trim(),
+    origin_city: $('oCity').value.trim(), origin_postal: $('oPostal').value.trim(),
+    dest_country: $('dCountry').value, dest_region: $('dRegion').value.trim(),
+    dest_city: $('dCity').value.trim(), dest_postal: $('dPostal').value.trim(),
+    dest_delivery: $('dDelivery').value
+  };
+}
+
+/* What have we seen on this lane before? Shown as context, never used
+   to price — the engine still marks up the cost the rep was quoted. */
+let laneTimer = null;
+async function refreshLaneHistory(){
+  clearTimeout(laneTimer);
+  laneTimer = setTimeout(async ()=>{
+    const op = $('oPostal').value.trim(), dp = $('dPostal').value.trim();
+    const or = $('oRegion').value.trim(), dr = $('dRegion').value.trim();
+    if(!(op && dp) && !(or && dr)){ $('laneHist').style.display='none'; return; }
+    const {data, error} = await sb.rpc('lane_history', {
+      p_origin_postal: op, p_dest_postal: dp,
+      p_origin_region: or || null, p_dest_region: dr || null,
+      p_mode: $('mode').value, p_months: 18
+    });
+    if(error || !data || data.level === 'none'){ $('laneHist').style.display='none'; return; }
+    const lvl = data.level === 'zone' ? 'this lane' : 'this province/state pair';
+    $('laneHist').style.display = 'block';
+    $('laneHist').innerHTML =
+      `<b>${data.n}</b> past ${$('mode').value.toUpperCase()} quotes on ${lvl} — ` +
+      `median cost <b>$${money(data.median_cost)}</b> (range $${money(data.p25_cost)}–$${money(data.p75_cost)}), ` +
+      `median markup <b>${data.median_markup}%</b>, median chargeable <b>${data.median_wt}</b>. ` +
+      `Last quoted ${new Date(data.last_quoted).toLocaleDateString('en-CA')}.`;
+  }, 400);
+}
+/* unit toggles */
+function bindToggle(wrapId, attr, hiddenId){
+  $(wrapId).querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      $(wrapId).querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      $(hiddenId).value = b.dataset[attr];
+      renderTotals();
+    });
+  });
+}
+bindToggle('tgDim','dim','dimUnit');
+bindToggle('tgWt','wt','wtUnit');
+$('mode').addEventListener('change', ()=>{ syncPackaging(); renderTotals(); });
+$('currency').addEventListener('change', syncCurrency);
+
+let defaultFx = 1.40;
+async function loadFx(){
+  const {data} = await sb.from('settings').select('value').eq('key','usd_cad').maybeSingle();
+  if(data) defaultFx = Number(data.value);
+  $('fx').value = defaultFx;
+  $('fxHint').textContent = 'saved default ' + defaultFx;
+}
+
+/* ---------- line items ---------- */
+function renderLines(){
+  const tb = $('lines');
+  tb.innerHTML = lines.map((L,i)=>`<tr data-i="${i}">
+    <td><input type="number" min="1" step="1" inputmode="numeric" value="${L.qty}" data-k="qty"></td>
+    <td><input type="number" min="0" step="any" inputmode="decimal" value="${L.l}" data-k="l"></td>
+    <td><input type="number" min="0" step="any" inputmode="decimal" value="${L.w}" data-k="w"></td>
+    <td><input type="number" min="0" step="any" inputmode="decimal" value="${L.h}" data-k="h"></td>
+    <td><input type="number" min="0" step="any" inputmode="decimal" value="${L.wt}" data-k="wt"></td>
+    <td class="calc"></td>
+    <td>${lines.length>1?`<button class="xbtn" data-del="${i}">×</button>`:''}</td></tr>`).join('');
+  tb.querySelectorAll('input').forEach(inp=>inp.addEventListener('input', e=>{
+    lines[+e.target.closest('tr').dataset.i][e.target.dataset.k] = e.target.value;
+    renderTotals();
+  }));
+  tb.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', ()=>{
+    lines.splice(+b.dataset.del,1); renderLines(); renderTotals();
+  }));
+  renderTotals();
+}
+function addLine(){ lines.push({qty:'1',l:'',w:'',h:'',wt:''}); renderLines(); }
+
+/* The server always works in inches and pounds. Dimensions and weight
+   convert independently, so cm + lb or in + kg are both fine. */
+function impLines(){
+  const dimCm = $('dimUnit').value==='cm', wtKg = $('wtUnit').value==='kg';
+  return lines.map(L=>{
+    let l=num(L.l), w=num(L.w), h=num(L.h), wt=num(L.wt);
+    if(dimCm){ l/=2.54; w/=2.54; h/=2.54; }
+    if(wtKg){ wt*=2.20462; }
+    return {qty:Math.max(1,Math.round(num(L.qty)||1)),
+            l:+l.toFixed(3), w:+w.toFixed(3), h:+h.toFixed(3), wt:+wt.toFixed(3)};
+  });
+}
+/* local preview only — the real numbers come from the server */
+function renderTotals(){
+  const wtKg = $('wtUnit').value==='kg', mode = $('mode').value, div = 139;
+  let pcs=0, wt=0, cube=0;
+  const rows = $('lines').querySelectorAll('tr');
+  impLines().forEach((L,i)=>{
+    pcs += L.qty; wt += L.wt*L.qty;
+    const cuin = (L.l>0&&L.w>0&&L.h>0) ? L.l*L.w*L.h : 0;
+    cube += (cuin/1728)*L.qty;
+    const cell = rows[i] && rows[i].querySelector('.calc'); if(!cell) return;
+    if(!cuin){ cell.textContent='no dims'; return; }
+    if(mode==='lcl'){
+      cell.textContent = ((cuin/1728)/35.3147*L.qty).toFixed(3)+' cbm';
+    }else{
+      const d = cuin/div, disp = wtKg ? (d/2.20462).toFixed(1)+' kg' : d.toFixed(1)+' lb';
+      cell.innerHTML = (mode==='courier' && d>L.wt) ? `<b>${disp}</b>` : disp;
+    }
+  });
+  const cbm = cube/35.3147, tonnes = wt/2204.62;
+  const wDisp = wtKg ? (wt/2.20462).toFixed(1)+' kg' : wt.toFixed(1)+' lb';
+  let html = `<span>Pieces <b>${pcs}</b></span><span>Weight <b>${wDisp}</b></span>`+
+             `<span>Volume <b>${cube.toFixed(2)} ft³ · ${cbm.toFixed(3)} cbm</b></span>`;
+  if(mode==='lcl'){
+    const wm = Math.max(cbm,tonnes);
+    html += `<span>Tonnes <b>${tonnes.toFixed(3)}</b></span>`+
+            `<span>W/M <b>${wm.toFixed(3)} (${tonnes>cbm?'weight':'measure'})</b></span>`;
+  }else if(cube>0){
+    html += `<span>Density <b>${(wt/cube).toFixed(1)} pcf</b></span>`;
+  }
+  $('totals').innerHTML = html;
+}
+
+$('custSearch').addEventListener('input', renderCustomerOptions);
+
+function clearQuote(){
+  $('cost').value = ''; $('custSearch').value = '';
+  $('customer').value = ''; renderCustomerOptions();
+  $('finalSell').value = ''; $('ref').value = ''; $('reason').value = '';
+  $('finalAlt').textContent = ''; $('tgFinalCur').innerHTML = '';
+  lines = [{qty:'1',l:'',w:'',h:'',wt:''}];
+  renderLines(); renderTotals();
+  lastQuote = null;
+  $('saveBox').style.display = 'none';
+  $('sell').textContent = '—';
+  $('sellSub').textContent = 'Enter a cost and press Get price';
+  $('brk').innerHTML = ''; $('flags').innerHTML = ''; $('savedMsg').textContent = '';
+  $('altPrice').innerHTML = '';
+  ['oRegion','oPostal','oCity','dRegion','dPostal','dCity'].forEach(id=>$(id).value='');
+  $('dDelivery').value='unknown';
+  $('laneHist').style.display='none';
+  $('oPostal').classList.remove('bad'); $('dPostal').classList.remove('bad');
+  $('oPostalErr').textContent=''; $('dPostalErr').textContent='';
+  editingId = null; pendingFinal = null;
+  $('editBanner').classList.add('hide'); $('editBanner').innerHTML = '';
+  $('saveBtn').textContent = 'Save quote';
+  $('cost').focus();
+}
+$('clearBtn').addEventListener('click', clearQuote);
+
+async function editQuote(id){
+  const {data, error} = await sb.from('quotes')
+    .select('id,cost,scope,mode,packaging,lines,customer_id,final_sell,reason,reference,currency,fx_rate,quoted_at,edit_count,origin_country,origin_region,origin_city,origin_postal,dest_country,dest_region,dest_city,dest_postal,dest_delivery')
+    .eq('id', id).maybeSingle();
+  if(error || !data){ alert(error?.message || 'That quote could not be loaded.'); return; }
+
+  editingId = data.id;
+
+  // stored lines are always inches and pounds
+  $('tgDim').querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.dim==='in'));
+  $('tgWt').querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.wt==='lb'));
+  $('dimUnit').value='in'; $('wtUnit').value='lb';
+
+  lines = (data.lines||[]).map(L=>({
+    qty:String(L.qty??1), l:String(L.l||''), w:String(L.w||''),
+    h:String(L.h||''), wt:String(L.wt||'')
+  }));
+  if(!lines.length) lines = [{qty:'1',l:'',w:'',h:'',wt:''}];
+
+  $('cost').value = data.cost;
+  $('mode').value = data.mode;
+  syncPackaging();
+  $('scope').value = data.scope;
+  $('pkg').value = data.packaging;
+  $('currency').value = data.currency || 'CAD';
+  syncCurrency();
+  if(data.fx_rate) $('fx').value = data.fx_rate;
+  $('customer').value = data.customer_id || '';
+  $('custSearch').value = '';
+  renderCustomerOptions();
+  $('customer').value = data.customer_id || '';
+  $('oCountry').value = data.origin_country || 'US';
+  $('oRegion').value  = data.origin_region  || '';
+  $('oCity').value    = data.origin_city    || '';
+  $('oPostal').value  = data.origin_postal  || '';
+  $('dCountry').value = data.dest_country   || 'CA';
+  $('dRegion').value  = data.dest_region    || '';
+  $('dCity').value    = data.dest_city      || '';
+  $('dPostal').value  = data.dest_postal    || '';
+  $('dDelivery').value= data.dest_delivery  || 'unknown';
+  refreshLaneHistory();
+  renderLines(); renderTotals();
+
+  pendingFinal = {sell:data.final_sell, reason:data.reason||'', ref:data.reference||''};
+
+  $('editBanner').classList.remove('hide');
+  $('editBanner').innerHTML =
+    `Correcting the quote saved ${new Date(data.quoted_at).toLocaleDateString('en-CA')}` +
+    (data.edit_count ? ` (edited ${data.edit_count}× already)` : '') +
+    `. Press Get price, then Save. <button onclick="clearQuote()" style="margin-left:9px;padding:3px 9px">Cancel</button>`;
+
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelector('.tab[data-view="quote"]').classList.add('on');
+  ['quote','mine','admin','customers'].forEach(v=>$('view-'+v).classList.toggle('hide', v!=='quote'));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+let pendingFinal = null;
+
+/* The quote is stored in the currency the cost was in, so the markup ratio
+   stays meaningful. This toggle only changes which currency you TYPE in —
+   the figure is converted before it is saved. */
+function renderFinalCurToggle(){
+  if(!lastQuote){ $('tgFinalCur').innerHTML=''; return; }
+  const opts = [lastQuote.currency, lastQuote.alt_currency];
+  $('tgFinalCur').innerHTML = opts.map(c=>
+    `<button type="button" data-fc="${c}" class="${c===finalCur?'on':''}">${c}</button>`).join('');
+  $('tgFinalCur').querySelectorAll('button').forEach(b=>b.addEventListener('click', ()=>{
+    const v = parseFloat($('finalSell').value);
+    const fx = Number(lastQuote.fx_rate);
+    finalCur = b.dataset.fc;
+    // carry the amount across so switching does not lose what was typed
+    if(isFinite(v) && v>0){
+      $('finalSell').value = (finalCur === lastQuote.currency
+        ? (lastQuote.currency==='USD' ? v/fx : v*fx)
+        : (lastQuote.currency==='USD' ? v*fx : v/fx)).toFixed(2);
+    }
+    $('finalSell').placeholder = (finalCur===lastQuote.currency
+      ? Number(lastQuote.sell) : Number(lastQuote.alt_sell)).toFixed(2);
+    renderFinalCurToggle(); echoFinal();
+  }));
+}
+
+function finalInQuoteCurrency(){
+  const v = parseFloat($('finalSell').value);
+  if(!isFinite(v) || v<=0) return null;
+  if(!lastQuote || finalCur === lastQuote.currency) return v;
+  const fx = Number(lastQuote.fx_rate);
+  return lastQuote.currency==='USD' ? v/fx : v*fx;   // typed in the other one
+}
+
+function echoFinal(){
+  const v = parseFloat($('finalSell').value);
+  if(!lastQuote || !isFinite(v) || v<=0){ $('finalAlt').textContent=''; return; }
+  const inQuote = finalInQuoteCurrency();
+  const fx = Number(lastQuote.fx_rate);
+  const other = lastQuote.currency==='USD' ? inQuote*fx : inQuote/fx;
+  const tail = finalCur === lastQuote.currency ? '' : `  · saved as ${lastQuote.currency} ${inQuote.toFixed(2)}`;
+  $('finalAlt').textContent =
+    `${lastQuote.currency} ${inQuote.toFixed(2)}  ≈  ${lastQuote.alt_currency} ${other.toFixed(2)}${tail}`;
+}
+$('finalSell').addEventListener('input', echoFinal);
+
+/* ---------- customers ---------- */
+async function loadCustomers(){
+  const {data} = await sb.from('customers').select('id,name,code').eq('active',true).order('name');
+  customers = (data||[]).sort((a,b)=>a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
+  renderCustomerOptions();
+}
+function renderCustomerOptions(){
+  const q = ($('custSearch').value||'').trim().toLowerCase();
+  const keep = $('customer').value;
+  const list = q ? customers.filter(c=>c.name.toLowerCase().includes(q)) : customers;
+  $('customer').innerHTML = '<option value="">— select —</option>' +
+    list.map(c=>`<option value="${c.id}"${c.id===keep?' selected':''}>${esc(c.name)}${c.code?' ('+esc(c.code)+')':''}</option>`).join('');
+  if(q && list.length===1) $('customer').value = list[0].id;
+}
+
+/* ---------- pricing ---------- */
+$('priceBtn').addEventListener('click', async ()=>{
+  const cost = num($('cost').value);
+  if(!cost){ flash('Enter the carrier cost first.'); return; }
+  $('priceBtn').disabled = true;
+  const cur = $('currency').value;
+  const {data, error} = await sb.rpc('price_quote', {
+    p_cost: cost, p_scope: $('scope').value, p_mode: $('mode').value,
+    p_packaging: $('pkg').value, p_lines: impLines(),
+    p_currency: cur, p_fx: cur==='USD' ? (num($('fx').value)||defaultFx) : null
+  });
+  $('priceBtn').disabled = false;
+  if(error){ flash(error.message); return; }
+  lastQuote = data;
+  showQuote(data);
+});
+
+function showQuote(q){
+  const wtKg = $('wtUnit').value==='kg';
+  const w = n => wtKg ? (Number(n)/2.20462).toFixed(1)+' kg' : Number(n).toFixed(1)+' lb';
+  const cur = q.currency || 'CAD';
+  $('sell').textContent = money(q.sell);
+  $('sellSub').textContent = `${cur} · ${q.markup_pct}% markup · ${money(q.gross_margin)} gross`;
+  $('altPrice').innerHTML = q.alt_sell
+    ? `≈ <b>${q.alt_currency} ${money(q.alt_sell)}</b> at ${q.fx_rate}`
+    : '';
+
+  let rows =
+    `<div><span>Carrier cost</span><b>${cur} ${money(q.cost)}</b></div>`+
+    `<div><span>Cost in ${q.alt_currency}</span><b>${money(q.alt_cost)} @ ${q.fx_rate}</b></div>`+
+    `<div><span>Sell in ${q.alt_currency}</span><b>${money(q.alt_sell)}</b></div>`+
+    `<div><span>Gross in ${q.alt_currency}</span><b>${money(q.alt_gross)}</b></div>`+
+    `<div><span>Pieces</span><b>${q.pieces}</b></div>`+
+    `<div><span>Actual weight</span><b>${w(q.actual_wt)}</b></div>`;
+
+  if($('mode').value==='lcl'){
+    rows += `<div><span>Volume</span><b>${q.cbm} cbm · ${q.cube_ft3} ft³</b></div>`+
+            `<div><span>Metric tonnes</span><b>${q.tonnes}</b></div>`+
+            `<div><span>Chargeable W/M</span><b>${q.chargeable_wt} (${q.wm_basis})</b></div>`;
+  }else{
+    rows += `<div><span>Chargeable</span><b>${w(q.chargeable_wt)}${q.dim_governs?' (dim)':''}</b></div>`+
+            `<div><span>Volume</span><b>${q.cube_ft3} ft³ · ${q.cbm} cbm</b></div>`+
+            (q.density_pcf!==null?`<div><span>Density</span><b>${q.density_pcf} pcf</b></div>`:'')+
+            (q.est_class!==null?`<div><span>Est. class</span><b>${q.est_class}</b></div>`:'');
+  }
+  $('brk').innerHTML = rows;
+  $('flags').innerHTML = (q.flags||[]).map(f=>`<div class="flag">${esc(f)}</div>`).join('');
+  finalCur = cur;                       // default: bill in the currency you bought in
+  renderFinalCurToggle();
+  $('finalSell').value = ''; $('finalSell').placeholder = Number(q.sell).toFixed(2);
+  $('finalAlt').textContent = '';
+  if(pendingFinal){
+    $('finalSell').value = Number(pendingFinal.sell).toFixed(2);
+    $('reason').value = pendingFinal.reason;
+    $('ref').value = pendingFinal.ref;
+    pendingFinal = null;
+    echoFinal();
+  }else{
+    $('reason').value=''; $('ref').value='';
+  }
+  $('saveBtn').textContent = editingId ? 'Update quote' : 'Save quote';
+  $('saveBox').style.display = 'block';
+  $('savedMsg').textContent = '';
+}
+function flash(m){ $('savedMsg').textContent = m; setTimeout(()=>$('savedMsg').textContent='', 5000); }
+
+/* ---------- saving ---------- */
+$('saveBtn').addEventListener('click', async ()=>{
+  if(!lastQuote){ return; }
+  const final = finalInQuoteCurrency() ?? Number(lastQuote.sell);
+  const differs = Math.abs(final - Number(lastQuote.sell)) >= 0.01;
+  if(differs && !$('reason').value){ flash('Pick a reason for the different price.'); return; }
+
+  const customerId = $('customer').value || null;
+  if(!customerId){ flash('Pick a customer first.'); return; }
+  if(!checkPostal('oPostal','oCountry','oPostalErr') || !checkPostal('dPostal','dCountry','dPostalErr')){
+    flash('Check the postal codes.'); return;
+  }
+
+  $('saveBtn').disabled = true;
+  const rpc = editingId ? 'update_quote' : 'save_quote';
+  const args = editingId ? {p_id: editingId} : {};
+  const {data, error} = await sb.rpc(rpc, {
+    ...args,
+    p_cost: num($('cost').value), p_scope: $('scope').value, p_mode: $('mode').value,
+    p_packaging: $('pkg').value, p_lines: impLines(),
+    p_customer_id: customerId,
+    p_final_sell: final,
+    p_reason: $('reason').value || null,
+    p_reference: $('ref').value.trim() || null,
+    p_currency: $('currency').value,
+    p_fx: $('currency').value==='USD' ? (num($('fx').value)||defaultFx) : null,
+    p_lane: laneJson()
+  });
+  $('saveBtn').disabled = false;
+  if(error){ flash(error.message); return; }
+
+  const wasEdit = !!editingId;
+  clearQuote();
+  flash(wasEdit ? 'Quote updated.' : 'Saved. Ready for the next one.');
+});
+
+/* ---------- my quotes ---------- */
+async function loadMine(reset){
+  const st = pageState.mine;
+  if(reset) st.page = 0;
+  const from = st.page*st.size, to = from + st.size - 1;
+
+  const {data, error, count} = await sb.from('quotes')
+    .select('id,quoted_at,cost,engine_sell,final_sell,markup_pct,reason,mode,currency,reference,voided,edit_count,customers(name)',
+            {count:'exact'})
+    .order('quoted_at',{ascending:false}).range(from, to);
+  if(error){ $('mineRows').innerHTML = `<tr><td colspan="9" class="n">${esc(error.message)}</td></tr>`; return; }
+  st.total = count ?? 0;
+
+  // headline figures cover everything, not just this page
+  const {data:agg} = await sb.from('quotes').select('markup_pct,engine_sell,final_sell');
+  const mks = (agg||[]).map(q=>Number(q.markup_pct));
+  $('mineStat').innerHTML = `<div>Quotes<b>${st.total}</b></div>`+
+    `<div>Median markup<b>${mks.length?med(mks).toFixed(0)+'%':'—'}</b></div>`+
+    `<div>Overridden<b>${(agg||[]).filter(q=>Math.abs(q.final_sell-q.engine_sell)>=0.01).length}</b></div>`;
+
+  $('mineRows').innerHTML = data.map(rowHtml).join('') || '<tr><td colspan="9" class="n">No quotes yet.</td></tr>';
+  renderPager('minePager','mine',()=>loadMine());
+}
+
+/* Server-side paging: each table asks for one page at a time with an exact
+   row count, so a few thousand quotes never land in the browser at once. */
+const pageState = {
+  mine:  {page:0, size:25, total:0},
+  all:   {page:0, size:25, total:0},
+  cust:  {page:0, size:25, total:0}
+};
+
+function renderPager(elId, key, reload){
+  const st = pageState[key];
+  const pages = Math.max(1, Math.ceil(st.total / st.size));
+  const from  = st.total ? st.page*st.size + 1 : 0;
+  const to    = Math.min(st.total, (st.page+1)*st.size);
+  const el = $(elId);
+  el.innerHTML =
+    `<button data-p="first" ${st.page===0?'disabled':''}>« first</button>`+
+    `<button data-p="prev"  ${st.page===0?'disabled':''}>‹ prev</button>`+
+    `<span>${from}–${to} of ${st.total}</span>`+
+    `<button data-p="next" ${st.page>=pages-1?'disabled':''}>next ›</button>`+
+    `<button data-p="last" ${st.page>=pages-1?'disabled':''}>last »</button>`+
+    `<span class="grow"></span>`+
+    `<span>rows</span><select data-size>`+
+      [25,50,100,200].map(n=>`<option value="${n}"${n===st.size?' selected':''}>${n}</option>`).join('')+
+    `</select>`;
+  el.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    if(b.dataset.p==='first') st.page = 0;
+    if(b.dataset.p==='prev')  st.page = Math.max(0, st.page-1);
+    if(b.dataset.p==='next')  st.page = st.page+1;
+    if(b.dataset.p==='last')  st.page = pages-1;
+    reload();
+  }));
+  el.querySelector('[data-size]').addEventListener('change', e=>{
+    st.size = +e.target.value; st.page = 0; reload();
+  });
+}
+
+const med = a => { const s=[...a].sort((x,y)=>x-y), m=Math.floor(s.length/2);
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
+function rowHtml(q){
+  const over = Math.abs(q.final_sell-q.engine_sell)>=0.01;
+  return `<tr class="${q.voided?'void':''}"><td>${new Date(q.quoted_at).toLocaleDateString('en-CA')}</td>
+    <td>${esc(q.customers?.name||'—')}</td><td>${q.mode}</td>
+    <td>${q.currency==='USD'?'US$':''}${money(q.cost)}</td><td>${money(q.engine_sell)}</td>
+    <td class="${over?(q.final_sell>q.engine_sell?'up':'dn'):''}">${money(q.final_sell)}</td>
+    <td>${Number(q.markup_pct).toFixed(0)}%</td>
+    <td style="text-align:left" class="n">${esc(q.reference||'')} ${esc(q.reason||'')}${
+      q.edit_count ? ` <span title="edited">·edited ${q.edit_count}×</span>` : ''}</td>
+    <td>${q.voided?'<span class="n">voided</span>':`<button onclick="editQuote('${q.id}')" style="padding:3px 8px">edit</button>`}</td></tr>`;
+}
+
+/* ---------- admin ---------- */
+let editBands = [];
+
+async function saveFx(){
+  const v = parseFloat($('sFx').value);
+  if(!(v>0)){ alert('Enter a rate above zero.'); return; }
+  const {error} = await sb.rpc('set_setting', {p_key:'usd_cad', p_value:v});
+  if(error){ alert(error.message); return; }
+  defaultFx = v; $('fx').value = v; $('fxHint').textContent = 'saved default ' + v;
+  $('rulesMsg').innerHTML = `<div class="msg ok">Default exchange rate saved as ${v}.</div>`;
+}
+
+async function loadRules(){
+  const {data, error} = await sb.from('pricing_rules').select('*').eq('active',true).maybeSingle();
+  if(error || !data){ $('rulesMsg').innerHTML = `<div class="msg err">${esc(error?.message||'no active rules')}</div>`; return; }
+  $('rulesMsg').innerHTML = '';
+  $('rulesMeta').innerHTML =
+    `<div>Version<b>${data.version}</b></div>
+     <div>Published<b>${new Date(data.created_at).toLocaleDateString('en-CA')}</b></div>
+     <div>Note<b style="font-size:12px;font-weight:400">${esc(data.note||'—')}</b></div>`;
+
+  editBands = data.bands.map(b=>({max:Number(b.max), mk:Number(b.mk)}));
+  renderBandEdit();
+
+  $('rXb').value=data.adjusters.xb; $('rIntl').value=data.adjusters.intl;
+  $('rDens').value=data.adjusters.low_density; $('rMulti').value=data.adjusters.multi;
+  $('fEnv').value=data.floors.Envelope; $('fPkg').value=data.floors.Package;
+  $('fSkid').value=data.floors.Skid; $('fGp').value=data.floors.min_gp;
+  $('fRound').value=data.floors.round; $('fDiv').value=data.dim_divisor;
+  $('fLcl') && ($('fLcl').value = data.floors.LCL ?? 150);
+  $('sFx').value = defaultFx;
+  $('rulesNote').value='';
+}
+
+function renderBandEdit(){
+  $('bandEdit').innerHTML = editBands.map((b,i)=>{
+    const lo = i===0 ? 0 : editBands[i-1].max;
+    const top = b.max > 1e8;
+    return `<tr>
+      <td style="text-align:left">
+        <span class="n">$${lo} –</span>
+        <input type="number" value="${b.max}" data-bi="${i}" data-bk="max" style="width:110px${top?';opacity:.55':''}">
+      </td>
+      <td><input type="number" value="${b.mk}" data-bi="${i}" data-bk="mk" style="width:90px"></td>
+      <td>${editBands.length>1?`<button class="xbtn" data-bdel="${i}">×</button>`:''}</td></tr>`;
+  }).join('');
+  $('bandEdit').querySelectorAll('input').forEach(inp=>inp.addEventListener('input', e=>{
+    const v = parseFloat(e.target.value);
+    if(isFinite(v)) editBands[+e.target.dataset.bi][e.target.dataset.bk] = v;
+  }));
+  $('bandEdit').querySelectorAll('[data-bdel]').forEach(b=>b.addEventListener('click', ()=>{
+    editBands.splice(+b.dataset.bdel,1); renderBandEdit();
+  }));
+}
+function addBand(){
+  const last = editBands[editBands.length-1];
+  editBands.splice(editBands.length-1, 0,
+    {max: Math.round((editBands.length>1 ? editBands[editBands.length-2].max*2 : 100)), mk: last.mk});
+  renderBandEdit();
+}
+
+async function publishEdited(){
+  const bands = editBands.map(b=>({max:Number(b.max), mk:Number(b.mk)}))
+                         .sort((a,b)=>a.max-b.max);
+  for(let i=1;i<bands.length;i++){
+    if(bands[i].max === bands[i-1].max){
+      $('rulesMsg').innerHTML = '<div class="msg err">Two bands share the same ceiling. Give each one a different value.</div>';
+      return;
+    }
+  }
+  if(bands[bands.length-1].max < 1e8){
+    if(!confirm('The top band ends at $'+bands[bands.length-1].max+
+      '. Costs above that will fall through to it anyway, but it is clearer to leave a very large ceiling on the last row. Publish as is?')) return;
+  }
+  if(!confirm('Publish these rules as a new active version?')) return;
+
+  const {data, error} = await sb.rpc('publish_rules', {
+    p_bands: bands,
+    p_adjusters: {xb:+$('rXb').value, intl:+$('rIntl').value,
+                  low_density:+$('rDens').value, multi:+$('rMulti').value},
+    p_floors: {Envelope:+$('fEnv').value, Package:+$('fPkg').value, Skid:+$('fSkid').value,
+               LCL:+$('fLcl').value, min_gp:+$('fGp').value, round:+$('fRound').value},
+    p_note: $('rulesNote').value.trim() || null,
+    p_dim_divisor: +$('fDiv').value
+  });
+  if(error){ $('rulesMsg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  $('rulesMsg').innerHTML = `<div class="msg ok">Published version ${data}. It is active from now on.</div>`;
+  loadRules(); loadCalibration();
+}
+
+async function loadCalibration(){
+  const {data, error} = await sb.rpc('calibration_report', {
+    p_months:+$('calMonths').value, p_min_n:+$('calMinN').value, p_cap:10
+  });
+  if(error){ $('calMsg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  $('calMsg').innerHTML = '';
+  $('calRows').innerHTML = data.map(r=>{
+    const d = r.proposed_mk!==null ? r.proposed_mk - r.current_mk : null;
+    return `<tr><td>${esc(r.band_label)}</td><td>${r.current_mk}%</td><td>${r.n}</td>
+      <td>${r.median_mk??'—'}</td><td>${r.p25??'—'}</td><td>${r.p75??'—'}</td>
+      <td class="${r.spread>60?'dn':''}">${r.spread??'—'}</td><td>${r.reps}</td>
+      <td class="${d>0?'up':(d<0?'dn':'')}">${r.proposed_mk!==null?r.proposed_mk+'%'+(d?` (${d>0?'+':''}${d})`:''):'—'}</td>
+      <td class="n">${esc(r.status)}</td></tr>`;
+  }).join('');
+
+  const any = data.some(r=>r.proposed_mk!==null && r.proposed_mk!==r.current_mk);
+  $('publishBox').classList.toggle('hide', !any);
+  if(any){
+    $('publishBands').value = JSON.stringify(
+      data.map(r=>({max: Number(r.band_max), mk: r.proposed_mk!==null ? r.proposed_mk : Number(r.current_mk)})));
+  }
+}
+
+function publishRules(){
+  // Load the proposals into the rules editor so they can be reviewed
+  // alongside the adjusters and floors before anything is published.
+  let bands;
+  try{ bands = JSON.parse($('publishBands').value); }
+  catch(e){ alert('The band list is not valid. Check the brackets and commas.'); return; }
+  editBands = bands.map(b=>({max:Number(b.max), mk:Number(b.mk)}));
+  renderBandEdit();
+  $('rulesNote').value = $('publishNote').value.trim();
+  $('rulesMsg').innerHTML = '<div class="msg warn">Proposals loaded into Current rules below. Review them, then press Publish changes.</div>';
+  $('rulesMsg').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+async function loadView(view, target, cols){
+  const {data, error} = await sb.from(view).select('*');
+  if(error){ $(target).innerHTML = `<tr><td colspan="${cols.length}" class="n">${esc(error.message)}</td></tr>`; return; }
+  $(target).innerHTML = data.map(r=>'<tr>'+cols.map(c=>`<td>${r[c]??'—'}</td>`).join('')+'</tr>').join('')
+    || `<tr><td colspan="${cols.length}" class="n">Not enough data yet.</td></tr>`;
+}
+
+async function loadAllQuotes(reset){
+  const st = pageState.all;
+  if(reset) st.page = 0;
+  const from = st.page*st.size, to = from + st.size - 1;
+
+  const {data, error, count} = await sb.from('quotes')
+    .select('id,quoted_at,cost,engine_sell,final_sell,markup_pct,reason,rules_version,voided,currency,mode,profiles!quotes_rep_id_fkey(full_name),customers(name)',
+            {count:'exact'})
+    .order('quoted_at',{ascending:false}).range(from, to);
+  if(error){ $('allRows').innerHTML = `<tr><td colspan="10" class="n">${esc(error.message)}</td></tr>`; return; }
+  st.total = count ?? 0;
+
+  $('allRows').innerHTML = data.map(q=>{
+    const over = Math.abs(q.final_sell-q.engine_sell)>=0.01;
+    return `<tr class="${q.voided?'void':''}"><td>${new Date(q.quoted_at).toLocaleDateString('en-CA')}</td>
+      <td>${esc(q.profiles?.full_name||'—')}</td><td>${esc(q.customers?.name||'—')}</td>
+      <td>${q.currency==='USD'?'US$':''}${money(q.cost)}</td><td>${money(q.engine_sell)}</td>
+      <td class="${over&&!q.voided?(q.final_sell>q.engine_sell?'up':'dn'):''}">${money(q.final_sell)}</td>
+      <td>${Number(q.markup_pct).toFixed(0)}%</td>
+      <td class="n">${esc(q.reason||'')}</td><td class="n">v${q.rules_version}</td>
+      <td>${q.voided?'':`<button onclick="editQuote('${q.id}')" style="padding:3px 8px">edit</button> `}<button onclick="voidQuote('${q.id}',${q.voided})" style="padding:3px 8px">${q.voided?'restore':'void'}</button></td></tr>`;
+  }).join('') || '<tr><td colspan="10" class="n">No quotes yet.</td></tr>';
+  renderPager('allPager','all',()=>loadAllQuotes());
+}
+
+async function voidQuote(id, isVoided){
+  if(!isVoided && !confirm('Void this quote? It stays on record but is left out of calibration and every report.')) return;
+  const {error} = await sb.rpc('void_quote', {p_id:id, p_undo:isVoided});
+  if(error){ alert(error.message); return; }
+  loadAllQuotes();
+}
+
+/* ---------- customer administration ---------- */
+async function loadCustomerAdmin(reset){
+  const st = pageState.cust;
+  if(reset) st.page = 0;
+  const from = st.page*st.size, to = from + st.size - 1;
+
+  const {data, error, count} = await sb.from('customers')
+    .select('id,name,code,active', {count:'exact'})
+    .order('name').range(from, to);
+  if(error){ $('custAdminRows').innerHTML = `<tr><td colspan="5" class="n">${esc(error.message)}</td></tr>`; return; }
+  st.total = count ?? 0;
+
+  // quote counts for the customers on this page only
+  const ids = data.map(c=>c.id);
+  const tally = {};
+  if(ids.length){
+    const {data:counts} = await sb.from('quotes').select('customer_id').in('customer_id', ids);
+    (counts||[]).forEach(q=>{ tally[q.customer_id] = (tally[q.customer_id]||0)+1; });
+  }
+
+  $('custAdminRows').innerHTML = data.map(c=>`<tr${c.active?'':' class="n"'}>
+    <td>${esc(c.name)}</td><td>${esc(c.code||'—')}</td>
+    <td>${c.active?'active':'retired'}</td>
+    <td>${tally[c.id]||0}</td>
+    <td><button onclick="renameCustomer('${c.id}','${esc(c.name).replace(/'/g,"\\'")}')" style="padding:3px 8px">rename</button>
+        <button onclick="toggleCustomer('${c.id}',${c.active})" style="padding:3px 8px">${c.active?'retire':'restore'}</button></td>
+  </tr>`).join('') || '<tr><td colspan="5" class="n">No customers yet — add one above.</td></tr>';
+  renderPager('custPager','cust',()=>loadCustomerAdmin());
+}
+
+async function addCustomer(){
+  const name = $('newCustName').value.trim();
+  if(!name){ $('custMsg').innerHTML = '<div class="msg warn">Enter a name.</div>'; return; }
+  const {error} = await sb.from('customers')
+    .insert({name, code: $('newCustCode').value.trim() || null});
+  if(error){
+    $('custMsg').innerHTML = `<div class="msg err">${
+      error.code==='23505' ? 'That customer already exists.' : esc(error.message)}</div>`;
+    return;
+  }
+  $('custMsg').innerHTML = `<div class="msg ok">Added ${esc(name)}.</div>`;
+  $('newCustName').value=''; $('newCustCode').value='';
+  loadCustomerAdmin(); loadCustomers();
+}
+
+async function renameCustomer(id, current){
+  const name = prompt('New name for this customer:', current);
+  if(!name || name.trim()===current) return;
+  const {error} = await sb.from('customers').update({name:name.trim()}).eq('id',id);
+  if(error){ alert(error.code==='23505' ? 'Another customer already has that name.' : error.message); return; }
+  loadCustomerAdmin(); loadCustomers();
+}
+
+async function toggleCustomer(id, active){
+  const {error} = await sb.from('customers').update({active: !active}).eq('id',id);
+  if(error){ alert(error.message); return; }
+  loadCustomerAdmin(); loadCustomers();
+}
+
+/* scrolling never changes a value */
+document.addEventListener('wheel', e=>{
+  const el = e.target;
+  if((el instanceof HTMLInputElement && el.type==='number' || el instanceof HTMLSelectElement)
+     && document.activeElement===el){ e.preventDefault(); el.blur(); }
+}, {passive:false});
+</script>
+</body>
+</html>

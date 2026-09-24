@@ -238,21 +238,25 @@ export default function QuotePage() {
         ...(activeAccessorials.length && { accessorials: activeAccessorials }),
       };
       const data = await fetchAPI('/api/rate/all', { method: 'POST', body: JSON.stringify(body) });
-      if (data.rates && data.rates.length) {
-        quoteResults = data.rates.map(r => ({
-          carrier: CARRIERS.find(c => c.id === r.carrierId) || CARRIERS[0],
-          rate: r.baseRate,
-          displayRate: r.displayRate,
-          transitDays: r.transitDays,
-          deliveryDate: r.deliveryDate || calcDelivery(r.transitDays, pickupDate),
-          service: r.serviceName,
-          live: r.isLiveRate || false,
-          quoteId: r.quoteId,
-          quoteRateId: r.quoteRateId,
-        }));
-      }
+      // A successful response — even with zero rates — is the real, honest answer (no carrier
+      // has a live rate for this route/shipment right now). Only a thrown error (network issue,
+      // backend unreachable) should fall through to client-side simulation below; an empty
+      // `rates: []` must NOT be treated the same as a failed request, or every genuinely-empty
+      // result gets silently replaced with fabricated data.
+      quoteResults = (data.rates || []).map(r => ({
+        carrier: CARRIERS.find(c => c.id === r.carrierId) || CARRIERS[0],
+        rate: r.baseRate,
+        displayRate: r.displayRate,
+        transitDays: r.transitDays,
+        deliveryDate: r.deliveryDate || calcDelivery(r.transitDays, pickupDate),
+        service: r.serviceName,
+        live: r.isLiveRate || false,
+        quoteId: r.quoteId,
+        quoteRateId: r.quoteRateId,
+      }));
     } catch {
-      // Fallback to client-side simulation
+      // Fallback to client-side simulation — only reached when the request itself failed
+      // (backend unreachable), not when it succeeded with zero live rates.
     }
 
     if (!quoteResults) {
@@ -625,6 +629,11 @@ export default function QuotePage() {
             {results.summary.count} quotes &middot; {results.summary.orig} &rarr; {results.summary.dest} &middot; {results.summary.type} &middot; {results.summary.weight} lbs &middot; {results.summary.currency}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>All rates shown are estimates and may be subject to adjustment based on actual shipment weight, dimensions, and carrier surcharges.</div>
+          {results.quotes.length === 0 && (
+            <div style={{ background: 'var(--off-white)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', color: 'var(--text2)', fontSize: 13 }}>
+              No live carrier rates are available for this route right now. Try adjusting the shipment details, or submit a spot rate request and our team will get back to you.
+            </div>
+          )}
           {results.quotes.map((r, i) => {
             const isBest = i === 0;
             const cheapest = results.quotes[0].displayRate;

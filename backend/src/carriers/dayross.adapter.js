@@ -25,24 +25,22 @@ class DayRossAdapter extends CarrierAdapter {
   // ─── getRates ─────────────────────────────────────────────────
 
   async getRates(params) {
-    if (this.isLive) {
-      try {
-        return await this._getLiveRates(params);
-      } catch (err) {
-        console.error('[DAYROSS-RATE] Live rates failed, falling back to mock:', err.message);
-        return this._getMockRates(params);
-      }
+    // Day & Ross's live API only supports LTL — nothing to offer for envelope/parcel
+    if (params.shipmentType === 'envelope' || params.shipmentType === 'parcel') {
+      return [];
     }
-    return this._getMockRates(params);
+    if (!this.isLive) return [];
+
+    try {
+      return await this._getLiveRates(params);
+    } catch (err) {
+      console.error('[DAYROSS-RATE] Live rates failed:', err.message);
+      return [];
+    }
   }
 
   async _getLiveRates(params) {
     const { origin, destination, weight, pieces, dimensions, pickupDate, freightClass, commodity, accessorials, shipmentType } = params;
-
-    // Day & Ross live API only supports LTL — fall back to mock for envelope/parcel
-    if (shipmentType === 'envelope' || shipmentType === 'parcel') {
-      return this._getMockRates(params);
-    }
 
     // Day & Ross requires pickupBy to be a future date — ensure at least next business day
     let shipDate = pickupDate || new Date().toISOString().split('T')[0];
@@ -183,46 +181,11 @@ class DayRossAdapter extends CarrierAdapter {
     return map[code] || `Day & Ross ${code}`;
   }
 
-  _getMockRates(params) {
-    const { shipmentType, origin, destination, weight, freightClass, pickupDate, accessorials = [] } = params;
-    const seed = this._makeSeed(this.id + (origin.postalCode || origin.city) + (destination.postalCode || destination.city) + shipmentType);
-    const rng = this._seededRandom(seed);
-    const rng2 = this._seededRandom2(seed);
-
-    let base;
-    if (shipmentType === 'envelope') base = 18 + rng * 35;
-    else if (shipmentType === 'parcel') base = 22 + rng * 55 + (weight / 10) * (7 + rng2 * 6);
-    else {
-      const classMultiplier = this._getClassMultiplier(freightClass);
-      base = (55 + rng * 85) * (weight / 100) * classMultiplier;
-    }
-
-    base = this._applyMockAccessorials(base, accessorials, rng2);
-
-    const transitDays = shipmentType === 'envelope' ? Math.ceil(1 + rng2 * 2) : shipmentType === 'parcel' ? Math.ceil(1 + rng2 * 3) : Math.ceil(2 + rng2 * 4);
-    const services = { envelope: ['Sameday Express', 'Next Day', 'Economy'], parcel: ['Ground Plus', 'Express', 'Standard'], ltl: ['Direct LTL', 'Intermodal', 'Standard LTL'] };
-    const svcList = services[shipmentType] || services.ltl;
-    const serviceName = svcList[Math.floor(rng * svcList.length)];
-    const rate = Math.max(Math.round((base + (rng - 0.5) * 8) * 100) / 100, shipmentType === 'envelope' ? 12 : shipmentType === 'parcel' ? 15 : 110);
-
-    const baseDate = pickupDate ? new Date(pickupDate + 'T12:00:00') : new Date();
-    const deliveryDate = formatDate(addBusinessDays(baseDate, transitDays));
-
-    return [{ serviceName, rate, transitDays, deliveryDate, isLive: false }];
-  }
-
   // ─── bookShipment (CreateShipment) ────────────────────────────
 
   async bookShipment(details) {
-    if (this.isLive) {
-      try {
-        return await this._liveBookShipment(details);
-      } catch (err) {
-        console.error('[DAYROSS-SHIP] Live booking failed, falling back to mock:', err.message);
-        return this._mockBookShipment(err.message);
-      }
-    }
-    return this._mockBookShipment();
+    if (!this.isLive) throw new Error('Day & Ross booking is not available (no live credentials configured)');
+    return this._liveBookShipment(details);
   }
 
   async _liveBookShipment(details) {
@@ -356,28 +319,11 @@ class DayRossAdapter extends CarrierAdapter {
     };
   }
 
-  _mockBookShipment(errorMessage) {
-    return {
-      carrierTrackingNumber: `DR${Date.now()}`,
-      confirmationNumber: `DR-CONF-${Date.now()}`,
-      status: 'confirmed',
-      label: null,
-      ...(errorMessage && { error: errorMessage }),
-    };
-  }
-
   // ─── getTracking (GetShipmentStatus) ──────────────────────────
 
   async getTracking(trackingNumber) {
-    if (this.isLive) {
-      try {
-        return await this._liveGetTracking(trackingNumber);
-      } catch (err) {
-        console.error('[DAYROSS-TRACK] Live tracking failed, falling back to mock:', err.message);
-        return this._mockGetTracking();
-      }
-    }
-    return this._mockGetTracking();
+    if (!this.isLive) throw new Error('Day & Ross tracking is not available (no live credentials configured)');
+    return this._liveGetTracking(trackingNumber);
   }
 
   async _liveGetTracking(trackingNumber) {
@@ -441,29 +387,7 @@ class DayRossAdapter extends CarrierAdapter {
     };
   }
 
-  _mockGetTracking() {
-    return { status: 'in_transit', events: [] };
-  }
-
   // ─── Helpers ──────────────────────────────────────────────────
-
-  _getClassMultiplier(cls) {
-    const map = { '50': 1, '55': 1.05, '60': 1.1, '65': 1.15, '70': 1.2, '77.5': 1.3, '85': 1.4, '92.5': 1.5, '100': 1.65, '110': 1.8, '125': 2, '150': 2.3, '175': 2.6, '200': 3, '250': 3.5, '300': 4 };
-    return map[String(cls)] || 1;
-  }
-
-  _applyMockAccessorials(base, accessorials, rng2) {
-    for (const a of accessorials) {
-      if (a === 'liftgate_pickup' || a === 'liftgate_delivery') base += 55 + rng2 * 30;
-      if (a === 'residential') base += 22 + rng2 * 12;
-      if (a === 'appointment') base += 38 + rng2 * 10;
-      if (a === 'inside_delivery') base += 75 + rng2 * 20;
-      if (a === 'hazmat') base += 145 + rng2 * 55;
-      if (a === 'saturday') base += 32 + rng2 * 15;
-      if (a === 'signature') base += 7 + rng2 * 4;
-    }
-    return base;
-  }
 
   // Map IFF accessorial codes to Day & Ross aCharge codes
   _mapAccessorials(accessorials) {

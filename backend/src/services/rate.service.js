@@ -179,17 +179,22 @@ async function getSingleCarrierRate(carrierId, params) {
   const ruleSet = await getActiveRuleSet();
   const inputs = buildPricingInputs(params, ruleSet);
 
-  const rates = await carrier.getRates(params);
-  return rates.map((r) => {
-    const priced = priceRate(r.rate, inputs);
-    return {
-      rate: priced.sell,
-      serviceName: r.serviceName,
-      transitDays: r.transitDays,
-      deliveryDate: r.deliveryDate,
-      flags: priced.flags,
-    };
-  });
+  try {
+    const rates = await carrier.getRates(params);
+    return rates.map((r) => {
+      const priced = priceRate(r.rate, inputs);
+      return {
+        rate: priced.sell,
+        serviceName: r.serviceName,
+        transitDays: r.transitDays,
+        deliveryDate: r.deliveryDate,
+        flags: priced.flags,
+      };
+    });
+  } catch (err) {
+    console.error(`[RATE] ${carrierId} failed:`, err.message);
+    return [];
+  }
 }
 
 module.exports = { getAllRates, getSingleCarrierRate };

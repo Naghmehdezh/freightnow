@@ -32,16 +32,14 @@ class CSAAdapter extends CarrierAdapter {
     if (params.shipmentType === 'envelope' || params.shipmentType === 'parcel') {
       return [];
     }
+    if (!this.isLive) return [];
 
-    if (this.isLive) {
-      try {
-        return await this._getLiveRates(params);
-      } catch (err) {
-        console.error('[CSA-RATE] Live rates failed, falling back to mock:', err.message);
-        return this._getMockRates(params);
-      }
+    try {
+      return await this._getLiveRates(params);
+    } catch (err) {
+      console.error('[CSA-RATE] Live rates failed:', err.message);
+      return [];
     }
-    return this._getMockRates(params);
   }
 
   async _getLiveRates(params) {
@@ -156,58 +154,11 @@ class CSAAdapter extends CarrierAdapter {
     }];
   }
 
-  _getMockRates(params) {
-    const { shipmentType, origin, destination, weight, pickupDate } = params;
-
-    // CSA only handles LTL
-    if (shipmentType === 'envelope' || shipmentType === 'parcel') return [];
-
-    const seed = this._makeSeed(this.id + (origin.postalCode || origin.city) + (destination.postalCode || destination.city) + shipmentType);
-    const rng = this._seededRandom(seed);
-    const rng2 = this._seededRandom2(seed);
-
-    const originCountry = (origin.country || 'CA').toUpperCase();
-    const destCountry = (destination.country || 'US').toUpperCase();
-    const isCrossBorder = originCountry !== destCountry;
-
-    // LTL freight pricing
-    const base = 250 + rng * 400 + (weight / 100) * (15 + rng2 * 10);
-
-    const services = [
-      {
-        name: 'CSA LTL Consolidated',
-        code: 'CONSOLIDAT',
-        transit: isCrossBorder ? Math.ceil(5 + rng2 * 5) : Math.ceil(3 + rng * 4),
-      },
-    ];
-
-    const baseDate = pickupDate ? new Date(pickupDate + 'T12:00:00') : new Date();
-
-    return services.map(svc => {
-      const rate = Math.max(Math.round(base * 100) / 100, 150);
-      return {
-        serviceName: svc.name,
-        serviceCode: svc.code,
-        rate,
-        transitDays: svc.transit,
-        deliveryDate: formatDate(addBusinessDays(baseDate, svc.transit)),
-        isLive: false,
-      };
-    });
-  }
-
   // ─── getTracking ──────────────────────────────────────────────
 
   async getTracking(trackingNumber) {
-    if (this.isLive) {
-      try {
-        return await this._liveGetTracking(trackingNumber);
-      } catch (err) {
-        console.error('[CSA-TRACK] Live tracking failed, falling back to mock:', err.message);
-        return this._mockGetTracking();
-      }
-    }
-    return this._mockGetTracking();
+    if (!this.isLive) throw new Error('CSA tracking is not available (no live credentials configured)');
+    return this._liveGetTracking(trackingNumber);
   }
 
   async _liveGetTracking(trackingNumber) {
@@ -262,22 +213,11 @@ class CSAAdapter extends CarrierAdapter {
     };
   }
 
-  _mockGetTracking() {
-    return { status: 'in_transit', events: [] };
-  }
-
   // ─── bookShipment ─────────────────────────────────────────────
 
   async bookShipment(details) {
-    if (this.isLive) {
-      try {
-        return await this._liveBookShipment(details);
-      } catch (err) {
-        console.error('[CSA-SHIP] Live booking failed, falling back to mock:', err.message);
-        return this._mockBookShipment(err.message);
-      }
-    }
-    return this._mockBookShipment();
+    if (!this.isLive) throw new Error('CSA booking is not available (no live credentials configured)');
+    return this._liveBookShipment(details);
   }
 
   async _liveBookShipment(details) {
@@ -383,16 +323,6 @@ class CSAAdapter extends CarrierAdapter {
       charges: booked.charges,
       totalCharges: booked.totalCharges,
       rawResponse: data,
-    };
-  }
-
-  _mockBookShipment(errorMessage) {
-    return {
-      carrierTrackingNumber: `CSA-C${Date.now()}`,
-      confirmationNumber: `CSA-${Date.now()}`,
-      status: 'confirmed',
-      label: null,
-      ...(errorMessage && { error: errorMessage }),
     };
   }
 

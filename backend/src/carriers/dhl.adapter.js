@@ -25,15 +25,13 @@ class DHLAdapter extends CarrierAdapter {
   // ─── getRates ─────────────────────────────────────────────────
 
   async getRates(params) {
-    if (this.isLive) {
-      try {
-        return await this._getLiveRates(params);
-      } catch (err) {
-        console.error('[DHL-RATE] Live rates failed, falling back to mock:', err.message);
-        return this._getMockRates(params);
-      }
+    if (!this.isLive) return [];
+    try {
+      return await this._getLiveRates(params);
+    } catch (err) {
+      console.error('[DHL-RATE] Live rates failed:', err.message);
+      return [];
     }
-    return this._getMockRates(params);
   }
 
   async _getLiveRates(params) {
@@ -139,55 +137,11 @@ class DHLAdapter extends CarrierAdapter {
     return rates;
   }
 
-  _getMockRates(params) {
-    const { shipmentType, origin, destination, weight, pickupDate } = params;
-    const seed = this._makeSeed(this.id + (origin.postalCode || origin.city) + (destination.postalCode || destination.city) + shipmentType);
-    const rng = this._seededRandom(seed);
-    const rng2 = this._seededRandom2(seed);
-
-    let base;
-    if (shipmentType === 'envelope') base = 25 + rng * 40;
-    else if (shipmentType === 'parcel') base = 35 + rng * 65 + (weight / 10) * (8 + rng2 * 5);
-    else base = 85 + rng * 120 + (weight / 100) * 45;
-
-    const services = [
-      { name: 'Express Worldwide', code: 'P', transit: Math.ceil(2 + rng2 * 3) },
-      { name: 'Express 12:00', code: 'T', transit: Math.ceil(2 + rng * 2) },
-      { name: 'Express 9:00', code: 'K', transit: Math.ceil(1 + rng2 * 2) },
-    ];
-
-    if (shipmentType === 'envelope') {
-      services.push({ name: 'Express Envelope', code: 'E', transit: Math.ceil(2 + rng * 2) });
-    }
-
-    const baseDate = pickupDate ? new Date(pickupDate + 'T12:00:00') : new Date();
-
-    return services.map((svc, i) => {
-      const priceMultiplier = 1 + (i * 0.15) + (rng - 0.5) * 0.1;
-      const rate = Math.max(Math.round(base * priceMultiplier * 100) / 100, 20);
-      return {
-        serviceName: svc.name,
-        serviceCode: svc.code,
-        rate,
-        transitDays: svc.transit,
-        deliveryDate: formatDate(addBusinessDays(baseDate, svc.transit)),
-        isLive: false,
-      };
-    }).sort((a, b) => a.rate - b.rate);
-  }
-
   // ─── getTracking ──────────────────────────────────────────────
 
   async getTracking(trackingNumber) {
-    if (this.isLive) {
-      try {
-        return await this._liveGetTracking(trackingNumber);
-      } catch (err) {
-        console.error('[DHL-TRACK] Live tracking failed, falling back to mock:', err.message);
-        return this._mockGetTracking();
-      }
-    }
-    return this._mockGetTracking();
+    if (!this.isLive) throw new Error('DHL tracking is not available (no live credentials configured)');
+    return this._liveGetTracking(trackingNumber);
   }
 
   async _liveGetTracking(trackingNumber) {
@@ -242,22 +196,11 @@ class DHLAdapter extends CarrierAdapter {
     };
   }
 
-  _mockGetTracking() {
-    return { status: 'in_transit', events: [] };
-  }
-
   // ─── bookShipment ─────────────────────────────────────────────
 
   async bookShipment(details) {
-    if (this.isLive) {
-      try {
-        return await this._liveBookShipment(details);
-      } catch (err) {
-        console.error('[DHL-SHIP] Live booking failed, falling back to mock:', err.message);
-        return this._mockBookShipment(err.message);
-      }
-    }
-    return this._mockBookShipment();
+    if (!this.isLive) throw new Error('DHL booking is not available (no live credentials configured)');
+    return this._liveBookShipment(details);
   }
 
   // Convert carrier-agnostic address (FedEx-style) to DHL format
@@ -384,15 +327,6 @@ class DHLAdapter extends CarrierAdapter {
     };
   }
 
-  _mockBookShipment(errorMessage) {
-    return {
-      carrierTrackingNumber: `DHL${Date.now()}`,
-      confirmationNumber: `DHL-CONF-${Date.now()}`,
-      status: 'confirmed',
-      label: null,
-      ...(errorMessage && { error: errorMessage }),
-    };
-  }
 }
 
 module.exports = new DHLAdapter();

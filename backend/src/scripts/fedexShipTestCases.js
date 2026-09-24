@@ -102,6 +102,11 @@ const TEST_CASES = [
     labelSpec: { imageType: 'PDF', labelStockType: 'PAPER_85X11_TOP_HALF_LABEL' },
     shippingPayment: { paymentType: 'SENDER' },
     specialServices: { specialServiceTypes: ['SATURDAY_DELIVERY'] },
+    // Baseline's "Future Day Shipments" rule: Saturday-delivery overnight shipments must ship
+    // on a Friday. Ship on today's date here and FedEx rejects the special service with
+    // ORGORDEST.SPECIALSERVICES.NOTALLOWED — a misleading error that reads like a lane
+    // restriction but is actually this date rule.
+    shipDateRule: 'nextFriday',
     customs: {
       dutiesPayment: {
         paymentType: 'THIRD_PARTY',
@@ -125,6 +130,7 @@ const TEST_CASES = [
         unitPrice: { currency: 'CAD', amount: 15 },
         customsValue: { currency: 'CAD', amount: 15 },
       }],
+      exportDetail: { b13AFilingOption: 'NOT_REQUIRED' },
     },
     blockInsightVisibility: false,
     rateRequestType: ['LIST'],
@@ -219,8 +225,27 @@ const TEST_CASES = [
 
 // ── Build FedEx Ship API request body ───────────────────────────────
 
+// Format a Date using its LOCAL calendar day, not toISOString() (which converts to UTC first
+// — in an Eastern evening, UTC has already rolled to the next calendar day, silently shifting
+// the date by one and turning "next Friday" into "next Saturday").
+function formatLocalDate(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Baseline's "Future Day Shipments" rule: Saturday-delivery overnight shipments must ship on
+// a Friday. If today already is Friday, shipping today already satisfies the rule.
+function getNextFriday() {
+  const d = new Date();
+  const daysUntilFriday = (5 - d.getDay() + 7) % 7;
+  d.setDate(d.getDate() + daysUntilFriday);
+  return formatLocalDate(d);
+}
+
 function buildShipRequest(tc) {
-  const shipDate = new Date().toISOString().split('T')[0];
+  const shipDate = tc.shipDateRule === 'nextFriday'
+    ? getNextFriday()
+    : formatLocalDate(new Date());
 
   const body = {
     labelResponseOptions: 'LABEL',
@@ -267,6 +292,11 @@ function buildShipRequest(tc) {
 
 function buildPayment(paymentConfig) {
   if (!paymentConfig || paymentConfig.paymentType === 'SENDER') {
+    // FedEx enforces this at the API level (ACCOUNT.NUMBER.MISMATCH): for SENDER-paid
+    // shipments, the payor account MUST equal the shipping account (whichever account these
+    // credentials are actually bound to) — CA_TEST_ACCOUNT triggers a real rejection here, so
+    // the baseline's "Canadian Test Account Number" placeholder means "your own account",
+    // which for this credential set is ACCOUNT_NUMBER, not the CA Test Account.
     return {
       paymentType: 'SENDER',
       payor: {

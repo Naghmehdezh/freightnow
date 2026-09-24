@@ -22,11 +22,17 @@ async function run() {
   // Ensure output directory exists
   if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  const accountNumber = process.env.FEDEX_ACCOUNT_NUMBER;
-  if (!accountNumber) {
-    console.error('FEDEX_ACCOUNT_NUMBER not set in .env');
+  if (!process.env.FEDEX_API_KEY) {
+    console.error('FEDEX_API_KEY not set in .env');
     process.exit(1);
   }
+
+  // Per the baseline's "Test Account Numbers" tab, IntegratorCA06 explicitly specifies the
+  // CA Test Account (614365501) in both the top-level accountNumber and the payor's
+  // responsibleParty.accountNumber — NOT the account in FEDEX_ACCOUNT_NUMBER, which the same
+  // tab separately labels the "Ground Economy Outbound Account" (a different, narrower-purpose
+  // account, used for the Ship test cases' third-party billing test only).
+  const CA_TEST_ACCOUNT = '614365501';
 
   // Build the ship date — FedEx Rate API expects YYYY-MM-DD only
   const now = new Date();
@@ -35,7 +41,7 @@ async function run() {
 
   // ----- Exact IntegratorCA06 request body from the spreadsheet -----
   const requestBody = {
-    accountNumber: { value: accountNumber },
+    accountNumber: { value: CA_TEST_ACCOUNT },
     rateRequestControlParameters: {
       returnTransitTimes: false,
       servicesNeededOnRateFailure: true,
@@ -68,7 +74,7 @@ async function run() {
         paymentType: 'SENDER',
         payor: {
           responsibleParty: {
-            accountNumber: { value: accountNumber },
+            accountNumber: { value: CA_TEST_ACCOUNT },
             address: {
               stateOrProvinceCode: 'ON',
               postalCode: 'L4W5K6',

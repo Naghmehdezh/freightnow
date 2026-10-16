@@ -9,6 +9,9 @@ const quoteRateSchema = new Schema({
   carrierName: { type: String, required: true },
   serviceName: { type: String, required: true },
   serviceCode: String, // carrier-specific service code (e.g. 'FEDEX_EXPRESS_SAVER')
+  // Currency the carrier quoted in. baseRate (carrier cost), engineRate and displayRate (price)
+  // are all in this currency — never converted. Quotes can mix CAD and USD rates.
+  currency: { type: String, enum: ['CAD', 'USD'], default: 'CAD' },
   baseRate: { type: Number, required: true },
   displayRate: { type: Number, required: true },
   transitDays: { type: Number, required: true },

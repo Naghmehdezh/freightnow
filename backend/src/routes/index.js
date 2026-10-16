@@ -15,6 +15,8 @@ const quickbooksRoutes = require('./quickbooks.routes');
 const addressValidationRoutes = require('./addressValidation.routes');
 const pricingRulesRoutes = require('./pricingRules.routes');
 const pricingAdminRoutes = require('./pricingAdmin.routes');
+const placesRoutes = require('./places.routes');
+const fedexLocationsRoutes = require('./fedexLocations.routes');
 
 const router = Router();
 
@@ -34,5 +36,7 @@ router.use('/quickbooks', quickbooksRoutes);
 router.use('/address-validation', addressValidationRoutes);
 router.use('/pricing-rules', pricingRulesRoutes);
 router.use('/admin/pricing', pricingAdminRoutes);
+router.use('/places', placesRoutes);
+router.use('/fedex', fedexLocationsRoutes);
 
 module.exports = router;

@@ -33,6 +33,17 @@ const rateRequestSchema = z.object({
   declaredValue: z.number().optional(),
   commodity: z.string().optional(),
   accessorials: z.array(z.string()).optional(),
+  // FedEx-only options (ignored by other carriers).
+  fedexPackaging: z.enum(['YOUR_PACKAGING', 'FEDEX_ENVELOPE', 'FEDEX_PAK', 'FEDEX_TUBE', 'FEDEX_SMALL_BOX', 'FEDEX_MEDIUM_BOX', 'FEDEX_LARGE_BOX', 'FEDEX_EXTRA_LARGE_BOX', 'FEDEX_BOX']).optional(),
+  fedexOneRate: z.boolean().optional(),
+  // Parcel dangerous goods type (with the 'hazmat' accessorial) — FedEx prices each differently.
+  dgType: z.enum(['ACCESSIBLE', 'INACCESSIBLE', 'SMALL_QUANTITY_EXCEPTION', 'BATTERY']).optional(),
+  battery: z.object({
+    material: z.enum(['LITHIUM_ION', 'LITHIUM_METAL']),
+    packing: z.enum(['CONTAINED_IN_EQUIPMENT', 'PACKED_WITH_EQUIPMENT']),
+  }).optional(),
+  // Requested delivery date for the 'date_certain' (FedEx Home Delivery®) accessorial.
+  homeDeliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 // Legacy FedEx endpoint (matches frontend's existing call format)
@@ -70,7 +81,9 @@ router.post('/fedex', optionalAuth, validate(fedexLegacySchema), async (req, res
       weight: data.weight,
       pieces: data.pieces || 1,
       dimensions: { length: data.dimL, width: data.dimW, height: data.dimH },
-      freightClass: data.freightClass || '70',
+      freightClass: data.freightClass
+        || rateService.estimateFreightClass({ weight: data.weight, pieces: data.pieces || 1, dimensions: { length: data.dimL, width: data.dimW, height: data.dimH } })
+        || '70',
       pickupDate: data.pickupDate,
       currency: data.currency || 'CAD',
       accessorials: [],

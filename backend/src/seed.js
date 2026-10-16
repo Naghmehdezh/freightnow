@@ -19,6 +19,7 @@ const ClaimDocument = require('./models/ClaimDocument');
 
 const bookingService = require('./services/booking.service');
 const { priceQuote } = require('./services/pricingEngine.service');
+const { syncCarrierMapping } = require('./scripts/syncCarrierMapping');
 const activityLogService = require('./services/activityLog.service');
 
 async function main() {
@@ -37,8 +38,11 @@ async function main() {
     { carrierId: 'estes', name: 'Estes Express', shipmentTypes: ['ltl'], credentialsRef: 'env:ESTES_API_KEY' },
   ];
   for (const c of carrierDefs) {
-    await Carrier.create({ ...c, enabled: true, providesLiveRates: false });
+    await Carrier.create({ enabled: true, providesLiveRates: false, ...c });
   }
+  // Which shipment types/lanes each carrier serves comes from Carrier_Mapping.md, overriding
+  // the shipmentTypes placeholders above.
+  await syncCarrierMapping();
 
   // Pricing policy — ported from the standalone Pricing Engine reference. Seed values are
   // explicitly uncalibrated placeholders (matching that system's own honesty about it),

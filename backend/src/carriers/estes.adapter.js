@@ -125,6 +125,9 @@ class EstesAdapter extends CarrierAdapter {
         serviceName: q.serviceLevelText || 'Estes LTL',
         serviceCode: q.quoteId || null,
         rate: Math.round(totalCharge * 100) / 100,
+        // Estes's rate response carries no currency field; Estes Express Lines prices and
+        // bills in USD (the account's "Customer Pricing" is a USD tariff).
+        currency: 'USD',
         transitDays,
         deliveryDate,
         isLive: true,

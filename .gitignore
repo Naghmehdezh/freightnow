@@ -43,3 +43,11 @@ dhl_test_output/
 fedex_test_output/
 fedex_test_output copy/
 fedex_test_output_Uzairs_account/
+polaris_test_output/
+xpo_test_output/
+
+# Office lock files
+~$*
+
+# FedEx ETD sample documents (test scripts)
+backend/src/scripts/fedex_etd_samples/

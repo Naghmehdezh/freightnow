@@ -30,6 +30,18 @@ const shipmentSchema = new Schema({
   declaredValue: Number,
   commodity: String,
   accessorials: String,
+  // Collected when booking (the quote only has city/postal code).
+  shipperContact: { name: String, company: String, phone: String },
+  originStreet: [String],
+  recipientContact: { name: String, company: String, phone: String, email: String },
+  destStreet: [String],
+  holdAtLocation: { locationId: String, locationType: String, name: String, address: Schema.Types.Mixed },
+  dangerousGoods: {
+    unNumber: String, properShippingName: String, hazardClass: String, packingGroup: String,
+    quantity: Number, units: String, emergencyPhone: String,
+  },
+  // Set when the carrier booking must be finished by IFF staff (e.g. fully regulated dangerous goods).
+  manualCarrierBooking: { required: Boolean, reason: String },
   labelBase64: String, // base64-encoded shipping label from carrier
   labelDocType: String, // PDF, PNG, ZPLII
   status: { type: String, default: 'pending' },

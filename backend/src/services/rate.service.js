@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
-const { getAllCarriers, getCarrier } = require('../carriers');
-const { priceQuote } = require('./pricingEngine.service');
+const { getCarriersForShipment, supportsShipment, getCarrier } = require('../carriers');
+const { priceQuote, freightClass } = require('./pricingEngine.service');
 const { getActiveRuleSet } = require('./pricingRules.service');
+const fedexValidationMode = require('./fedexValidationMode');
 const { detectScope } = require('../utils/shipmentScope');
 const Quote = require('../models/Quote');
 const QuoteRate = require('../models/QuoteRate');
@@ -37,24 +38,36 @@ function buildPricingInputs(params, ruleSet) {
   return { cost: null, scope, mode, packaging, lines, currency: params.currency || 'CAD', ruleSet };
 }
 
-function priceRate(rate, inputs) {
-  const { ruleSet, ...engineInput } = inputs;
-  return priceQuote({ ...engineInput, cost: rate }, ruleSet);
+// Each rate is priced and shown in the currency the carrier quoted it in — no conversion of the
+// price. Adapters report their currency (FedEx, XPO); those that don't are CAD carriers.
+// The engine still bands a USD cost on its CAD equivalent internally (bands/floors are defined
+// in CAD), but the sell price it returns is in the carrier's currency.
+function carrierCurrency(r) {
+  if (r.currency && !['CAD', 'USD'].includes(r.currency)) {
+    console.warn(`[RATE] ${r.carrierId} quoted in unsupported currency ${r.currency}; treating as CAD`);
+  }
+  return r.currency === 'USD' ? 'USD' : 'CAD';
 }
 
-// The engine treats cost as being in the quote's currency. Adapters whose carrier bills in a
-// different currency (XPO quotes USD) say so via `currency`; convert at the rule set's FX rate
-// so a USD cost is never priced as if it were CAD. Adapters that omit it are left untouched.
-function toQuoteCurrency(r, inputs) {
-  if (!r.currency || r.currency === inputs.currency) return r.rate;
-  const fx = inputs.ruleSet.usdToCadRate || 1.40;
-  if (r.currency === 'USD' && inputs.currency === 'CAD') return Math.round(r.rate * fx * 100) / 100;
-  if (r.currency === 'CAD' && inputs.currency === 'USD') return Math.round((r.rate / fx) * 100) / 100;
-  return r.rate;
+function priceRate(rate, currency, inputs) {
+  const { ruleSet, ...engineInput } = inputs;
+  return priceQuote({ ...engineInput, cost: rate, currency }, ruleSet);
+}
+
+// LTL freight class from density (lb per cubic foot) — same NMFC density table the pricing
+// engine uses. Weight is the shipment total; dimensions are per piece.
+function estimateFreightClass({ weight, pieces, dimensions }) {
+  const { length: l, width: w, height: h } = dimensions || {};
+  if (!(weight > 0 && l > 0 && w > 0 && h > 0)) return null;
+  const cubicFeet = (l * w * h * (pieces || 1)) / 1728;
+  return String(freightClass(weight / cubicFeet));
 }
 
 async function getAllRates(params, userId) {
-  const [carriers, ruleSet] = await Promise.all([getAllCarriers(), getActiveRuleSet()]);
+  if (params.shipmentType === 'ltl' && !params.freightClass) {
+    params.freightClass = estimateFreightClass(params) || undefined;
+  }
+  const [carriers, ruleSet] = await Promise.all([getCarriersForShipment(params), getActiveRuleSet()]);
   const inputs = buildPricingInputs(params, ruleSet);
 
   const results = await Promise.allSettled(
@@ -78,11 +91,18 @@ async function getAllRates(params, userId) {
 
   // Price each rate through the engine and sort
   const processedRates = allRates.map((r) => {
-    const cost = toQuoteCurrency(r, inputs);
-    const priced = priceRate(cost, inputs);
-    return { ...r, baseRate: cost, displayRate: priced.sell, pricingResult: priced };
+    const currency = carrierCurrency(r);
+    const priced = priceRate(r.rate, currency, inputs);
+    // TEMPORARY (FedEx validation screenshots): show FedEx's exact rate, no markup.
+    if (r.carrierId === 'fedex' && fedexValidationMode.isOn()) {
+      const fx = inputs.ruleSet.usdToCadRate || 1.40;
+      Object.assign(priced, { sell: r.rate, markupPct: 0, grossMargin: 0, sellCad: currency === 'USD' ? r.rate * fx : r.rate });
+    }
+    return { ...r, currency, baseRate: r.rate, displayRate: priced.sell, pricingResult: priced };
   });
-  processedRates.sort((a, b) => a.displayRate - b.displayRate);
+  // Rates can be in different currencies, so "cheapest" is decided on the engine's CAD
+  // equivalent of the sell price — ordering only; every displayed price stays in its own currency.
+  processedRates.sort((a, b) => a.pricingResult.sellCad - b.pricingResult.sellCad);
 
   // Mark best rate
   if (processedRates.length > 0) {
@@ -125,6 +145,13 @@ async function getAllRates(params, userId) {
           declaredValue: params.declaredValue,
           commodity: params.commodity,
           accessorials: params.accessorials ? JSON.stringify(params.accessorials) : null,
+          options: {
+            fedexPackaging: params.fedexPackaging,
+            fedexOneRate: params.fedexOneRate,
+            dgType: params.dgType,
+            battery: params.battery,
+            homeDeliveryDate: params.homeDeliveryDate,
+          },
           expiresAt,
         }], { session });
 
@@ -136,6 +163,7 @@ async function getAllRates(params, userId) {
           carrierName: r.carrierName,
           serviceName: r.serviceName,
           serviceCode: r.serviceCode || null,
+          currency: r.currency,
           baseRate: r.baseRate,
           displayRate: r.displayRate,
           engineRate: r.displayRate,
@@ -175,6 +203,7 @@ async function getAllRates(params, userId) {
       carrierName: r.carrierName,
       serviceName: r.serviceName,
       displayRate: r.displayRate,
+      currency: r.currency,
       transitDays: r.transitDays,
       estimatedDelivery: r.deliveryDate,
       isLiveRate: r.isLive || false,
@@ -187,6 +216,7 @@ async function getAllRates(params, userId) {
 async function getSingleCarrierRate(carrierId, params) {
   const carrier = await getCarrier(carrierId);
   if (!carrier) return null;
+  if (!(await supportsShipment(carrierId, params))) return [];
 
   const ruleSet = await getActiveRuleSet();
   const inputs = buildPricingInputs(params, ruleSet);
@@ -194,9 +224,11 @@ async function getSingleCarrierRate(carrierId, params) {
   try {
     const rates = await carrier.getRates(params);
     return rates.map((r) => {
-      const priced = priceRate(toQuoteCurrency(r, inputs), inputs);
+      const currency = carrierCurrency(r);
+      const priced = priceRate(r.rate, currency, inputs);
       return {
         rate: priced.sell,
+        currency,
         serviceName: r.serviceName,
         transitDays: r.transitDays,
         deliveryDate: r.deliveryDate,
@@ -209,4 +241,4 @@ async function getSingleCarrierRate(carrierId, params) {
   }
 }
 
-module.exports = { getAllRates, getSingleCarrierRate };
+module.exports = { getAllRates, getSingleCarrierRate, estimateFreightClass };

@@ -9,7 +9,12 @@ async function getTracking(trackingNumber) {
   if (!shipment) {
     shipment = await Shipment.findOne({ carrierTrackingNumber: trackingNumber });
   }
-  if (!shipment) throw new NotFoundError('Shipment');
+  if (!shipment) {
+    // Not booked through the portal — a FedEx tracking number (12–15 digits) can still be
+    // tracked directly with FedEx (Basic Integrated Visibility / Track API).
+    if (/^\d{12,15}$/.test(trackingNumber)) return _trackFedexDirect(trackingNumber);
+    throw new NotFoundError('Shipment');
+  }
 
   // Try live carrier tracking if we have a real carrier tracking number
   let carrierData = null;
@@ -76,6 +81,45 @@ async function getTracking(trackingNumber) {
     pieces: carrierData?.pieces || `${shipment.pieces || '—'}`,
     latestStatus: carrierData?.latestStatus || null,
     events: formattedEvents,
+  };
+}
+
+async function _trackFedexDirect(trackingNumber) {
+  const fedex = await getCarrier('fedex');
+  if (!fedex) throw new NotFoundError('Shipment');
+  let data;
+  try {
+    data = await fedex.getTracking(trackingNumber);
+  } catch (err) {
+    console.error('[TRACKING] FedEx direct lookup failed:', err.message);
+    throw new NotFoundError('Shipment');
+  }
+  const now = new Date();
+  const events = (data.events || []).map((e, i) => {
+    const ts = e.timestamp ? new Date(e.timestamp) : null;
+    return {
+      event: e.event,
+      location: e.location,
+      time: ts ? _formatEventTime(ts) : '',
+      done: !!(ts && ts <= now),
+      active: i === 0,
+      description: e.description || '',
+    };
+  });
+  const delivery = data.actualDelivery || data.estimatedDelivery;
+  return {
+    trackingNumber,
+    carrierTrackingNumber: trackingNumber,
+    carrier: 'FedEx',
+    route: data.route || '',
+    status: data.status,
+    estimatedDelivery: delivery,
+    delivery: delivery ? _formatDeliveryDate(delivery) : '—',
+    service: data.service || 'FedEx',
+    weight: data.weight || '—',
+    pieces: data.pieces || '—',
+    latestStatus: data.latestStatus || null,
+    events,
   };
 }
 

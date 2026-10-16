@@ -81,7 +81,10 @@ function httpsPost(url, body, extraHeaders = {}) {
             resolve(JSON.parse(text));
           } else {
             console.error(`[FEDEX-HTTP] ${url} failed: ${res.statusCode}`, text.substring(0, 300));
-            reject(new Error(`FedEx API error (${res.statusCode})`));
+            const err = new Error(`FedEx API error (${res.statusCode})`);
+            err.statusCode = res.statusCode;
+            try { err.body = JSON.parse(text); } catch { err.body = text; }
+            reject(err);
           }
         }
 

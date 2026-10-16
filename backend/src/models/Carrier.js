@@ -10,7 +10,11 @@ const carrierSchema = new Schema({
   name: { type: String, required: true },
   enabled: { type: Boolean, default: true },
   providesLiveRates: { type: Boolean, default: false },
-  shipmentTypes: [String],
+  // Coverage, synced from Carrier_Mapping.md (scripts/syncCarrierMapping.js). A rate request is
+  // only sent to a carrier whose shipmentTypes AND lanes both cover the shipment — e.g. Day & Ross
+  // is LTL + domestic Canada only, so it's never asked to rate a shipment to the US.
+  shipmentTypes: [{ type: String, enum: ['envelope', 'parcel', 'ltl'] }],
+  lanes: [{ type: String, enum: ['domestic_ca', 'domestic_us', 'cross_border', 'international'] }],
   credentialsRef: String, // e.g. 'env:FEDEX_API_KEY' — never the credential itself
 }, { timestamps: true });
 

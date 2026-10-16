@@ -3,6 +3,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
 import s from './page.module.css';
+import { FEDEX_DISCLAIMER, FEDEX_DISCLAIMER_STYLE } from '@/lib/fedexCompliance';
 
 const MOCK_SHIPMENTS = {
   '1Z999AA1234567890': { carrier: 'FedEx Freight', route: 'Toronto, ON → Chicago, IL', delivery: 'May 24, 2026', service: 'Freight Economy', weight: '500 lbs', pieces: '2 pallets', status: 'delivered', events: [
@@ -147,6 +148,8 @@ function TrackPageInner() {
           </div>
         </div>
       )}
+      {/* Required on every screen showing FedEx marks or service names (FedEx Integrator validation). */}
+      {result && /fedex/i.test(`${result.carrier} ${result.service}`) && <p style={{ ...FEDEX_DISCLAIMER_STYLE, marginTop: 16 }}>{FEDEX_DISCLAIMER}</p>}
     </div>
   );
 }

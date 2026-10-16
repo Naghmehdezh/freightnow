@@ -2,7 +2,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
-import { FEDEX_EULA_TEXT } from '@/lib/fedexCompliance';
+import {
+  FEDEX_DISCLAIMER, FEDEX_DISCLAIMER_STYLE, FEDEX_EULA_REVISION, FEDEX_EULA_CHECKBOX_LABEL, FEDEX_EULA_ACCEPT_BUTTON,
+} from '@/lib/fedexCompliance';
+import FedexEulaViewer from '@/components/FedexEulaViewer';
 import s from './page.module.css';
 
 const IFF_TERMS = `IFF CARGO TERMS OF SERVICE
@@ -35,16 +38,10 @@ export default function OnboardingPage() {
   const [termsChecked, setTermsChecked] = useState(false);
   const [fedexChecked, setFedexChecked] = useState(false);
   const [fedexScrolled, setFedexScrolled] = useState(false);
+  const [eulaAcceptedAt, setEulaAcceptedAt] = useState(null);
   const [authorizedChecked, setAuthorizedChecked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  function handleEulaScroll(e) {
-    const el = e.target;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 10) {
-      setFedexScrolled(true);
-    }
-  }
 
   // If user already has a company but hasn't accepted terms, skip to step 2
   useEffect(() => {
@@ -99,7 +96,9 @@ export default function OnboardingPage() {
     setLoading(true);
     try {
       await fetchAPI('/api/profile/accept-terms', { method: 'POST' });
-      router.push('/portal');
+      // Confirmation screen that the EULA was accepted (FedEx Integrator requirement).
+      setEulaAcceptedAt(new Date());
+      setStep(3);
     } catch (err) {
       setError(err.error?.message || err.message || 'Something went wrong');
     } finally {
@@ -215,13 +214,13 @@ export default function OnboardingPage() {
 
               <div className={s.termsSection}>
                 <div className={s.termsLabel}>FedEx End User License Agreement</div>
-                <div className={s.termsBox} onScroll={handleEulaScroll}>{FEDEX_EULA_TEXT}</div>
+                <FedexEulaViewer onReachedEnd={() => setFedexScrolled(true)} height={380} />
                 {!fedexScrolled && (
                   <p className={s.scrollHint}>Please scroll to the end of the agreement to continue.</p>
                 )}
                 <label className={`${s.checkbox} ${!fedexScrolled ? s.checkboxDisabled : ''}`}>
                   <input type="checkbox" checked={fedexChecked} onChange={e => setFedexChecked(e.target.checked)} disabled={!fedexScrolled} />
-                  <span>I have read and accept the FedEx End User License Agreement</span>
+                  <span>{FEDEX_EULA_CHECKBOX_LABEL}</span>
                 </label>
               </div>
 
@@ -233,9 +232,24 @@ export default function OnboardingPage() {
               </div>
 
               <button type="submit" className={s.submit} disabled={loading || !termsChecked || !fedexChecked || !authorizedChecked}>
-                {loading ? 'Completing…' : 'I accept the terms of FedEx EULA to start shipping'}
+                {loading ? 'Completing…' : FEDEX_EULA_ACCEPT_BUTTON}
               </button>
+              <p style={{ ...FEDEX_DISCLAIMER_STYLE, marginTop: 10 }}>{FEDEX_DISCLAIMER}</p>
             </form>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <h1 className={s.title}>Agreements accepted</h1>
+            <div className={s.acceptedBox}>
+              You have accepted and agreed to the FedEx End User License Agreement and the IFF Cargo Terms of Service.
+            </div>
+            <p className={s.subtitle}>
+              {FEDEX_EULA_REVISION} — accepted {eulaAcceptedAt?.toLocaleString('en-CA', { dateStyle: 'long', timeStyle: 'short' })}.
+            </p>
+            <button type="button" className={s.submit} onClick={() => router.push('/portal')}>Start shipping</button>
+            <p style={{ ...FEDEX_DISCLAIMER_STYLE, marginTop: 10 }}>{FEDEX_DISCLAIMER}</p>
           </>
         )}
       </div>

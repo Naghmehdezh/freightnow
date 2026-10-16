@@ -14,7 +14,7 @@
   border-radius: var(--radius-lg);
   padding: 32px;
   width: 100%;
-  max-width: 520px;
+  max-width: 640px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
@@ -94,7 +94,7 @@
 }
 
 .disclaimer {
-  font-size: 11px;
+  font-size: 8pt; /* FedEx Integrator requirement */
   color: var(--text3);
   margin: 4px 0 14px;
 }
@@ -165,3 +165,10 @@
   background: #fff;
   cursor: pointer;
 }
+
+.checkboxDisabled { opacity: .55; }
+.supportBox { background: var(--off-white); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 13px; color: var(--text2); display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.supportBox b { color: var(--text); }
+
+.linkRow { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; margin-bottom: 8px; }
+.linkRow .linkBtn { margin: 0; }

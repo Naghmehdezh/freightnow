@@ -24,6 +24,14 @@ const quoteSchema = new Schema({
   declaredValue: Number,
   commodity: String,
   accessorials: String,
+  // Option details chosen with the accessorials — needed again when the quote is booked.
+  options: {
+    fedexPackaging: String,
+    fedexOneRate: Boolean,
+    dgType: String, // ACCESSIBLE | INACCESSIBLE | SMALL_QUANTITY_EXCEPTION | BATTERY
+    battery: { material: String, packing: String },
+    homeDeliveryDate: String,
+  },
   expiresAt: { type: Date, required: true },
   status: { type: String, default: 'active' },
 }, { timestamps: { createdAt: 'createdAt', updatedAt: false } });

@@ -127,6 +127,8 @@ class DHLAdapter extends CarrierAdapter {
         serviceName,
         serviceCode: productCode,
         rate: Math.round(rate * 100) / 100,
+        // DHL states the currency of each price; carried through so it's never mislabelled.
+        ...(priceEntry.priceCurrency && { currency: priceEntry.priceCurrency }),
         transitDays,
         deliveryDate,
         isLive: true,

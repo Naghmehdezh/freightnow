@@ -17,4 +17,16 @@ function detectScope(originCountry, destCountry) {
   return 'intl';
 }
 
-module.exports = { detectScope };
+// Lane names used by carrier coverage (Carrier.lanes / Carrier_Mapping.md columns).
+// Anything that isn't CA->CA, US->US or CA<->US counts as international — including a
+// domestic move inside another country, which none of the mapped carriers cover domestically.
+function detectLane(originCountry, destCountry) {
+  const o = (originCountry || '').toUpperCase();
+  const d = (destCountry || '').toUpperCase();
+  if (o === 'CA' && d === 'CA') return 'domestic_ca';
+  if (o === 'US' && d === 'US') return 'domestic_us';
+  if (NORTH_AMERICA_TRADE_ZONE.includes(o) && NORTH_AMERICA_TRADE_ZONE.includes(d)) return 'cross_border';
+  return 'international';
+}
+
+module.exports = { detectScope, detectLane };

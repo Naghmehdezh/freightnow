@@ -14,10 +14,14 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 
 const path = require('path');
 const fs = require('fs');
-const { getToken, getBaseUrl, httpsPost } = require('../services/fedexAuth.service');
+const { getBaseUrl, httpsPost } = require('../services/fedexAuth.service');
+const { getTestAccountToken } = require('./fedexTestAccountToken');
 
 const OUT_DIR = path.resolve(__dirname, '../../../fedex_test_output');
-const ACCOUNT_NUMBER = process.env.FEDEX_ACCOUNT_NUMBER;
+// The CA cases ship from the spreadsheet's Canadian test account (Mississauga). It must be
+// registered first and every call made with its own CSP token — see fedexTestAccountToken.js.
+const ACCOUNT_NUMBER = process.env.FEDEX_CA_TEST_ACCOUNT || '614365501';
+let accountToken = null;
 
 // ── Shared shipper for all CA test cases ────────────────────────────
 const SHIPPER = {
@@ -292,11 +296,8 @@ function buildShipRequest(tc) {
 
 function buildPayment(paymentConfig) {
   if (!paymentConfig || paymentConfig.paymentType === 'SENDER') {
-    // FedEx enforces this at the API level (ACCOUNT.NUMBER.MISMATCH): for SENDER-paid
-    // shipments, the payor account MUST equal the shipping account (whichever account these
-    // credentials are actually bound to) — CA_TEST_ACCOUNT triggers a real rejection here, so
-    // the baseline's "Canadian Test Account Number" placeholder means "your own account",
-    // which for this credential set is ACCOUNT_NUMBER, not the CA Test Account.
+    // SENDER-paid: the payor account must equal the shipping account, or FedEx returns
+    // ACCOUNT.NUMBER.MISMATCH.
     return {
       paymentType: 'SENDER',
       payor: {
@@ -371,6 +372,11 @@ async function runTestCase(tc) {
   console.log(`${tc.id}: ${tc.description}`);
   console.log('='.repeat(60));
 
+  // Clear output from earlier runs so the folder only holds this run's results.
+  for (const f of fs.readdirSync(OUT_DIR)) {
+    if (f.startsWith(`${tc.id}_`) && !f.includes('_track_')) fs.unlinkSync(path.join(OUT_DIR, f));
+  }
+
   // Build and save request
   const requestBody = buildShipRequest(tc);
   const reqPath = path.join(OUT_DIR, `${tc.id}_request.json`);
@@ -378,7 +384,7 @@ async function runTestCase(tc) {
   console.log(`  ✓ Request saved: ${tc.id}_request.json`);
 
   // Get token and call Ship API
-  const token = await getToken();
+  const token = accountToken;
   const url = `${getBaseUrl()}/ship/v1/shipments`;
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -400,8 +406,10 @@ async function runTestCase(tc) {
       }
       // Save error response if available
       const errPath = path.join(OUT_DIR, `${tc.id}_response_ERROR.json`);
-      fs.writeFileSync(errPath, JSON.stringify({ error: err.message }, null, 2));
-      console.error(`  ✗ FAILED: ${err.message}`);
+      fs.writeFileSync(errPath, JSON.stringify(err.body || { error: err.message }, null, 2));
+      const reasons = err.body?.errors?.map(e => `${e.code}: ${e.message}`).join('; ');
+      console.error(`  ✗ FAILED: ${err.message}${reasons ? ` — ${reasons}` : ''}`);
+      if (err.body?.transactionId) console.error(`    transactionId: ${err.body.transactionId}`);
       console.log(`  Error saved: ${tc.id}_response_ERROR.json`);
       return false;
     }
@@ -411,6 +419,7 @@ async function runTestCase(tc) {
   const resPath = path.join(OUT_DIR, `${tc.id}_response.json`);
   fs.writeFileSync(resPath, JSON.stringify(data, null, 2));
   console.log(`  ✓ Response saved: ${tc.id}_response.json`);
+  console.log(`  ✓ transactionId: ${data.transactionId}`);
 
   // Extract tracking number
   const shipment = data.output?.transactionShipments?.[0];
@@ -442,11 +451,11 @@ async function runTestCase(tc) {
 }
 
 async function main() {
-  if (!ACCOUNT_NUMBER) {
-    console.error('FEDEX_ACCOUNT_NUMBER not set in .env');
-    process.exit(1);
-  }
   if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
+
+  const reg = await getTestAccountToken(ACCOUNT_NUMBER);
+  accountToken = reg.accessToken;
+  console.log(`Registered test account ${ACCOUNT_NUMBER} (registration txn ${reg.registrationTxn})`);
 
   // Allow running a single test case via CLI arg
   const filter = process.argv[2]?.toUpperCase();

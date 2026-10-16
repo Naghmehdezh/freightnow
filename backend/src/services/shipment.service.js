@@ -7,8 +7,10 @@ const { NotFoundError } = require('../utils/errors');
 // Called from booking.service.js immediately after a Booking is confirmed. Synchronous today
 // because carriers are mocked — this is the natural seam to make async once real carrier
 // booking APIs exist (e.g. deferred to a queue/webhook waiting on carrier confirmation).
-async function createShipmentForBooking(session, booking, quote, selectedRate) {
+async function createShipmentForBooking(session, booking, quote, selectedRate, input = {}, company = null) {
   const trackingNumber = await generateTrackingNumber();
+  const shipper = _shipperParty(input.shipper, company, quote);
+  const recipient = input.recipient;
 
   const [shipment] = await Shipment.create([{
     trackingNumber,
@@ -37,6 +39,14 @@ async function createShipmentForBooking(session, booking, quote, selectedRate) {
     declaredValue: quote.declaredValue,
     commodity: quote.commodity,
     accessorials: quote.accessorials,
+    shipperContact: { name: shipper.contact.personName, company: shipper.contact.companyName, phone: shipper.contact.phoneNumber },
+    originStreet: shipper.address.streetLines,
+    ...(recipient && {
+      recipientContact: { name: recipient.contactName, company: recipient.companyName, phone: recipient.phone, email: recipient.email },
+      destStreet: [recipient.street1, recipient.street2].filter(Boolean),
+    }),
+    ...(input.holdAtLocation && { holdAtLocation: input.holdAtLocation }),
+    ...(input.dangerousGoods && { dangerousGoods: input.dangerousGoods }),
     status: 'pending',
     estimatedDelivery: selectedRate.estimatedDelivery,
   }], { session });
@@ -75,7 +85,7 @@ async function getUserShipments(userId, { status, page = 1, limit = 10, search }
       .sort({ bookedAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('booking', 'bookingNumber sellRate')
+      .populate('booking', 'bookingNumber sellRate currency')
       .lean(),
     Shipment.countDocuments(where),
   ]);
@@ -96,12 +106,34 @@ async function getShipmentById(shipmentId, userId) {
 // Called AFTER the booking transaction commits. Attempts a real carrier booking
 // and updates the Shipment with the carrier's tracking number + label.
 // If the carrier API fails, the shipment keeps its IFF tracking number (graceful degradation).
-async function bookWithCarrier(shipment, quote, selectedRate, company) {
+async function bookWithCarrier(shipment, quote, selectedRate, company, input = {}) {
   const carrier = await getCarrier(selectedRate.carrierId);
   if (!carrier) return null;
 
+  // Fully regulated dangerous goods (and the small quantity exception) on a parcel need a
+  // DG-approved carrier account and a signed shipper's declaration, so IFF staff finish the
+  // carrier booking. Lithium batteries (Section II) are booked automatically.
+  const accessorials = _parseAccessorials(quote.accessorials);
+  if (['parcel', 'envelope'].includes(quote.shipmentType) && accessorials.includes('hazmat')
+      && quote.options?.dgType !== 'BATTERY') {
+    const manualCarrierBooking = {
+      required: true,
+      reason: 'Dangerous goods: IFF will complete the carrier booking and send the label once the shipment is reviewed.',
+    };
+    await Shipment.updateOne({ _id: shipment._id }, { manualCarrierBooking });
+    await TrackingEvent.create({
+      shipment: shipment._id,
+      event: 'Awaiting IFF review',
+      location: quote.originCity || quote.originPostal,
+      timestamp: new Date(),
+      description: 'Dangerous goods shipment — carrier booking will be completed by IFF',
+    });
+    console.log(`[SHIPMENT] ${shipment.trackingNumber}: dangerous goods — carrier booking left for IFF staff`);
+    return { manualCarrierBooking };
+  }
+
   // Build the details object the carrier adapter expects
-  const details = _buildCarrierDetails(quote, selectedRate, company);
+  const details = _buildCarrierDetails(quote, selectedRate, company, input);
 
   let result;
   try {
@@ -132,37 +164,56 @@ async function bookWithCarrier(shipment, quote, selectedRate, company) {
   };
 }
 
-function _buildCarrierDetails(quote, selectedRate, company) {
+// Shipper contact + street: what the customer entered when booking, else the company profile.
+// City/postal code always come from the quote — that's what was priced.
+function _shipperParty(input, company, quote) {
+  const originCountry = (quote.originCountry || 'CA').toUpperCase();
+  return {
+    contact: {
+      personName: input?.contactName || company?.name || 'Shipper',
+      companyName: input?.companyName || company?.name || '',
+      phoneNumber: _digits(input?.phone || company?.phone) || '0000000000',
+    },
+    address: {
+      streetLines: input?.street1
+        ? [input.street1, input.street2].filter(Boolean)
+        : [company?.street || quote.originCity || 'N/A'],
+      city: quote.originCity || company?.city || '',
+      stateOrProvinceCode: quote.originProvince || _provinceFromPostal(quote.originPostal, originCountry),
+      postalCode: quote.originPostal || company?.postalCode || '',
+      countryCode: originCountry,
+    },
+  };
+}
+
+function _digits(phone) {
+  return phone ? String(phone).replace(/\D/g, '') : '';
+}
+
+function _parseAccessorials(raw) {
+  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+
+function _buildCarrierDetails(quote, selectedRate, company, input = {}) {
   const shipDate = quote.pickupDate || new Date().toISOString().split('T')[0];
   const originCountry = (quote.originCountry || 'CA').toUpperCase();
   const destCountry = (quote.destCountry || 'US').toUpperCase();
   const isInternational = originCountry !== destCountry;
+  const accessorials = _parseAccessorials(quote.accessorials);
 
-  // Shipper: use company address if available, fall back to quote origin
-  const shipper = {
-    contact: {
-      personName: company?.name || 'Shipper',
-      companyName: company?.name || '',
-      phoneNumber: company?.phone || '0000000000',
-    },
-    address: {
-      streetLines: [company?.street || quote.originCity || 'N/A'],
-      city: company?.city || quote.originCity || '',
-      stateOrProvinceCode: company?.province || quote.originProvince || _provinceFromPostal(quote.originPostal, originCountry),
-      postalCode: company?.postalCode || quote.originPostal || '',
-      countryCode: originCountry,
-    },
-  };
+  const shipper = _shipperParty(input.shipper, company, quote);
 
-  // Recipient: use quote destination (street not available from quote flow)
+  // Recipient: contact + street from the booking form; city/postal code from the quote.
+  const r = input.recipient || {};
   const recipient = {
     contact: {
-      personName: 'Recipient',
-      companyName: '',
-      phoneNumber: '0000000000',
+      personName: r.contactName || 'Recipient',
+      companyName: r.companyName || '',
+      phoneNumber: _digits(r.phone) || '0000000000',
+      ...(r.email && { emailAddress: r.email }),
     },
     address: {
-      streetLines: [quote.destCity || 'N/A'],
+      streetLines: r.street1 ? [r.street1, r.street2].filter(Boolean) : [quote.destCity || 'N/A'],
       city: quote.destCity || '',
       stateOrProvinceCode: quote.destProvince || _provinceFromPostal(quote.destPostal, destCountry),
       postalCode: quote.destPostal || '',
@@ -173,7 +224,16 @@ function _buildCarrierDetails(quote, selectedRate, company) {
   const details = {
     shipDatestamp: shipDate,
     serviceType: selectedRate.serviceCode || null,
-    packagingType: 'YOUR_PACKAGING',
+    packagingType: quote.options?.fedexPackaging || 'YOUR_PACKAGING',
+    // The options the customer was quoted for — each carrier adapter maps them to its own codes.
+    accessorials,
+    options: {
+      fedexOneRate: !!quote.options?.fedexOneRate,
+      dgType: quote.options?.dgType,
+      battery: quote.options?.battery?.material ? quote.options.battery : undefined,
+      homeDeliveryDate: quote.options?.homeDeliveryDate,
+    },
+    ...(input.holdAtLocation && { holdAtLocation: input.holdAtLocation }),
     shipper,
     recipient,
     weight: { units: 'LB', value: quote.weight || 1 },
@@ -214,16 +274,6 @@ function _buildCarrierDetails(quote, selectedRate, company) {
     };
   }
 
-  // Map accessorials to special services
-  if (quote.accessorials) {
-    try {
-      const accessorials = JSON.parse(quote.accessorials);
-      if (accessorials.includes('saturday')) {
-        details.specialServices = { specialServiceTypes: ['SATURDAY_DELIVERY'] };
-      }
-    } catch { /* ignore parse errors */ }
-  }
-
   return details;
 }
 
@@ -253,4 +303,4 @@ async function getShipmentLabel(shipmentId, userId) {
   };
 }
 
-module.exports = { createShipmentForBooking, bookWithCarrier, getUserShipments, getShipmentById, getShipmentLabel };
+module.exports = { createShipmentForBooking, bookWithCarrier, getUserShipments, getShipmentById, getShipmentLabel, _buildCarrierDetails };

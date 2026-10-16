@@ -69,6 +69,7 @@ async function listQuotesForAdmin({ from, to, carrierId, adjustedOnly, search, p
       serviceName: r.serviceName,
       cost: r.baseRate,
       costCad: r.costCad,
+      currency: r.currency || 'CAD',
       enginePrice: r.engineRate ?? r.displayRate,
       finalPrice: r.displayRate,
       engineMarkupPct: r.markupPct,
@@ -309,11 +310,24 @@ async function summary({ months = 12 } = {}) {
   const quoteIds = quotes.map(q => q._id);
   const [rates, bookings] = await Promise.all([
     QuoteRate.find({ quote: { $in: quoteIds } }).select('baseRate displayRate adjustedAt'),
-    Booking.find({ quote: { $in: quoteIds } }).select('costRate sellRate'),
+    Booking.find({ quote: { $in: quoteIds } }).select('costRate sellRate currency'),
   ]);
   const markups = rates.map(achievedMarkup).filter(v => v != null);
-  const bookedCost = bookings.reduce((s, b) => s + (b.costRate || 0), 0);
-  const bookedSell = bookings.reduce((s, b) => s + (b.sellRate || 0), 0);
+  // Bookings can be in CAD or USD — totals are kept per currency, never added together.
+  const byCurrency = {};
+  for (const b of bookings) {
+    const t = byCurrency[b.currency || 'CAD'] ||= { cost: 0, sell: 0, count: 0 };
+    t.cost += b.costRate || 0;
+    t.sell += b.sellRate || 0;
+    t.count += 1;
+  }
+  const bookedByCurrency = Object.fromEntries(Object.entries(byCurrency).map(([cur, t]) => [cur, {
+    shipments: t.count,
+    cost: round2(t.cost),
+    sell: round2(t.sell),
+    grossMargin: round2(t.sell - t.cost),
+    marginPct: t.cost ? round1((t.sell / t.cost - 1) * 100) : null,
+  }]));
 
   return {
     months,
@@ -321,10 +335,7 @@ async function summary({ months = 12 } = {}) {
     rateOptions: rates.length,
     shipmentsBooked: bookings.length,
     conversionPct: quotes.length ? round1((bookings.length / quotes.length) * 100) : 0,
-    bookedCost: round2(bookedCost),
-    bookedSell: round2(bookedSell),
-    bookedGrossMargin: round2(bookedSell - bookedCost),
-    bookedMarginPct: bookedCost ? round1((bookedSell / bookedCost - 1) * 100) : null,
+    bookedByCurrency,
     avgAchievedMarkupPct: markups.length ? round1(markups.reduce((s, v) => s + v, 0) / markups.length) : null,
     medianAchievedMarkupPct: round1(percentile(markups, 0.5)),
     adjustedRates: rates.filter(r => r.adjustedAt).length,

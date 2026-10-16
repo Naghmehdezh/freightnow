@@ -15,29 +15,28 @@ const LOCKED_MESSAGE = 'We are unable to process this request. Please try again 
 const isLive = !!process.env.FEDEX_API_KEY;
 
 // ---------------------------------------------------------------------------
-// FedEx Credential Registration API — POST /irc/v1/customerkeys
+// FedEx Account Registration API (v2)
 //
-// Per the FedEx test case baseline (MFA sheet), this is a multi-step API.
-// All steps POST to the same endpoint, but with different request bodies:
+// Endpoints confirmed against the FedEx sandbox and the Integrator test case baseline
+// (MFA tab). The old single endpoint POST /irc/v1/customerkeys returns 403 for this project.
 //
-//   1. Address Validation (Factor 1):
-//      Request:  { accountNumber: { value }, address, customerName }
-//      Response: { output: { customerKey, customerPassword } }  (passthrough)
-//              or MFA required (no credentials returned)
+//   Factor 1  POST /registration/v2/address/keysgeneration
+//             { accountNumber: { value }, customerName, address }
+//             -> output.mfaOptions[0] = { accountAuthToken, mfaRequired, phoneNumber,
+//                                         options: { invoice: 'INVOICE', secureCode: ['SMS','EMAIL','CALL'] } }
+//             (an MFA-passthrough account returns output.credentials { child_Key, child_secret } here directly)
+//   Factor 2  POST /registration/v2/customerkeys/pingeneration  { option, locale }
+//             POST /registration/v2/pin/keysgeneration          { secureCodePin, customerName }
+//             POST /registration/v2/invoice/keysgeneration      { invoiceDetail, customerName, locale }
+//             -> output.child_Key / output.child_secret
 //
-//   2. Pin Generation (Factor 2 — trigger):
-//      Request:  { option: "EMAIL"|"SMS"|"CALL", locale: "en_CA" }
+// Every call uses the project's OAuth token as the Bearer; Factor 2 calls ALSO send the
+// Factor 1 accountAuthToken in a header of that name (sending it as the Bearer gives 401).
+// FedEx matches the address strictly: street on one line, and the full ZIP+4 for US accounts.
 //
-//   3. Pin Validation (Factor 2 — verify PIN):
-//      Request:  { secureCodePin: "123456", customerName }
-//      Response: { output: { customerKey, customerPassword } }
-//
-//   4. Invoice Validation (Factor 2 — verify invoice):
-//      Request:  { invoiceDetail: { number, date, currency, amount }, customerName, locale }
-//      Response: { output: { customerKey, customerPassword } }
-//
-// In mock mode (no FEDEX_API_KEY), we simulate the multi-step MFA flow with
-// local PIN generation and invoice validation so the UI can be fully tested.
+// Live failures are surfaced to the user as FedEx's own message — never silently replaced
+// with simulated data, which would make a failed registration look successful.
+// Mock mode (local PIN, simulated keys) is used only when no FEDEX_API_KEY is configured.
 // ---------------------------------------------------------------------------
 
 const FACTOR2_METHOD_MAP = {
@@ -45,113 +44,157 @@ const FACTOR2_METHOD_MAP = {
   pin_sms: 'SMS',
   pin_call: 'CALL',
 };
+const LOCALE = 'en_US';
+const ACCOUNT_AUTH_TOKEN_FALLBACK_MINUTES = 30;
 
-async function _fedexRegistrationCall(body) {
-  const token = await getToken();
-  const url = `${getBaseUrl()}/irc/v1/customerkeys`;
+function fedexErrorMessage(err, fallback) {
+  const codes = err?.body?.errors;
+  if (Array.isArray(codes) && codes.length) {
+    const e = codes[0];
+    if (e.code === 'ACCOUNT.ADDRESS.MISMATCH') {
+      return 'The address does not match the one FedEx has on file for this account. Enter it exactly as it appears on your FedEx invoice (US accounts: use the full ZIP+4).';
+    }
+    return e.message || fallback;
+  }
+  return fallback;
+}
+
+async function _registrationCall(path, body, accountAuthToken) {
   const headers = {
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${await getToken()}`,
     'Content-Type': 'application/json',
-    'X-locale': 'en_CA',
+    'X-locale': LOCALE,
+    ...(accountAuthToken && { accountAuthToken }),
   };
   const bodyStr = JSON.stringify(body);
-
-  let data;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     try {
-      data = await httpsPost(url, bodyStr, headers);
-      break;
+      return await httpsPost(`${getBaseUrl()}${path}`, bodyStr, headers);
     } catch (err) {
-      if ((err.message.includes('401') || err.message.includes('503')) && attempt < 2) {
-        console.log(`[FEDEX-REG] Attempt ${attempt + 1} failed (${err.message}), retrying...`);
-        if (err.message.includes('401')) {
-          invalidateToken();
-          const freshToken = await getToken();
-          headers.Authorization = `Bearer ${freshToken}`;
-        }
-        await new Promise(r => setTimeout(r, 500));
-        continue;
+      const retryable = (err.statusCode === 401 || err.statusCode === 503) && attempt < 2;
+      if (!retryable) throw err;
+      console.log(`[FEDEX-REG] ${path} attempt ${attempt + 1} failed (${err.statusCode}), retrying...`);
+      if (err.statusCode === 401 && !accountAuthToken) {
+        invalidateToken();
+        headers.Authorization = `Bearer ${await getToken()}`;
       }
-      throw err;
+      await new Promise(r => setTimeout(r, 500));
     }
   }
-  return data;
 }
 
 function _buildFedexAddress(address) {
   return {
-    streetLines: Array.isArray(address.street) ? address.street : [address.street || ''],
-    city: address.city || '',
-    stateOrProvinceCode: address.province || '',
-    postalCode: address.postalCode || '',
+    // One line: FedEx answers ACCOUNT.ADDRESS.MISMATCH when the street is split across lines.
+    streetLines: [String(address.street || '').trim()],
+    city: (address.city || '').trim(),
+    stateOrProvinceCode: (address.province || '').trim().toUpperCase(),
+    postalCode: String(address.postalCode || '').replace(/[\s-]/g, '').toUpperCase(),
     countryCode: address.country || 'CA',
     residential: false,
   };
 }
 
+function _childKeys(output = {}) {
+  // MFA-passthrough accounts return the keys under output.credentials at Factor 1.
+  if (output.credentials) output = output.credentials;
+  return {
+    key: output.child_Key || output.childKey || output.child_key || output.customerKey,
+    secret: output.child_secret || output.childSecret || output.child_Secret || output.customerPassword,
+  };
+}
+
+function _tokenExpiry(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    if (payload.exp) return new Date(payload.exp * 1000);
+  } catch { /* fall through */ }
+  return new Date(Date.now() + ACCOUNT_AUTH_TOKEN_FALLBACK_MINUTES * 60 * 1000);
+}
+
+function _requireAccountAuthToken(connection) {
+  if (!connection.accountAuthToken || !connection.accountAuthTokenExpiresAt
+    || connection.accountAuthTokenExpiresAt < new Date()) {
+    throw new ValidationError('This verification session has expired. Please start the FedEx account connection again.');
+  }
+  return connection.accountAuthToken;
+}
+
+async function _markVerified(connection, output) {
+  const { key, secret } = _childKeys(output);
+  connection.status = 'verified';
+  connection.verifiedAt = new Date();
+  connection.childKey = key;
+  connection.childSecret = secret;
+  connection.pinCodeHash = null;
+  connection.pinExpiresAt = null;
+  connection.accountAuthToken = undefined;
+  connection.accountAuthTokenExpiresAt = undefined;
+  await connection.save();
+  activityLogService.logActivity(connection.user, null, 'fedex_account_verified', {
+    connectionId: connection.id, method: connection.factor2Method || 'passthrough',
+  });
+  return sanitize(connection);
+}
+
 // ---------------------------------------------------------------------------
-// startConnection — Factor 1 (Address Validation)
-//
-// Sends { accountNumber: { value }, address, customerName } to FedEx.
-// If FedEx returns customerKey/customerPassword (passthrough account), done.
-// Otherwise, MFA is required — connection stays in awaiting_factor2.
+// startConnection — Factor 1 (address validation)
 // ---------------------------------------------------------------------------
 
 async function startConnection(userId, { fedexAccountNumber, address, eulaAccepted, customerName }) {
   if (!eulaAccepted) {
     throw new ValidationError('You must accept the FedEx EULA before connecting a FedEx account.');
   }
-
-  if (isLive) {
-    try {
-      return await _liveStartConnection(userId, { fedexAccountNumber, address, customerName });
-    } catch (err) {
-      console.error('[FEDEX-REG] Live startConnection failed, falling back to mock:', err.message);
-      return _mockStartConnection(userId, { fedexAccountNumber, address, customerName });
-    }
-  }
-  return _mockStartConnection(userId, { fedexAccountNumber, address, customerName });
+  return isLive
+    ? _liveStartConnection(userId, { fedexAccountNumber, address, customerName })
+    : _mockStartConnection(userId, { fedexAccountNumber, address, customerName });
 }
 
 async function _liveStartConnection(userId, { fedexAccountNumber, address, customerName }) {
   const body = {
     accountNumber: { value: fedexAccountNumber },
-    address: _buildFedexAddress(address),
     customerName: customerName || 'Customer',
+    address: _buildFedexAddress(address),
   };
 
-  const data = await _fedexRegistrationCall(body);
-
-  // MFA passthrough — FedEx returned credentials directly
-  if (data.output?.customerKey) {
-    const connection = await FedexAccountConnection.create({
-      user: userId,
-      fedexAccountNumber,
-      customerName: body.customerName,
-      shippingAddress: address,
-      eulaAcceptedAt: new Date(),
-      status: 'verified',
-      verifiedAt: new Date(),
-      childKey: data.output.customerKey,
-      childSecret: data.output.customerPassword,
-      customerServiceBypass: true,
-    });
-    activityLogService.logActivity(userId, null, 'fedex_eula_accepted', { connectionId: connection.id });
-    activityLogService.logActivity(userId, null, 'fedex_account_verified', { connectionId: connection.id });
-    return sanitize(connection);
+  let data;
+  try {
+    data = await _registrationCall('/registration/v2/address/keysgeneration', body);
+  } catch (err) {
+    console.error('[FEDEX-REG] Address validation failed:', err.message, err.body?.transactionId || '');
+    throw new ValidationError(fedexErrorMessage(err, 'FedEx could not validate this account and address.'));
   }
 
-  // MFA required — store connection, await Factor 2
-  const connection = await FedexAccountConnection.create({
+  const output = data.output || {};
+  const mfa = output.mfaOptions?.[0] || {};
+  const base = {
     user: userId,
     fedexAccountNumber,
     customerName: body.customerName,
     shippingAddress: address,
     eulaAcceptedAt: new Date(),
-    status: 'awaiting_factor2',
-    availablePinDeliveryOptions: ['EMAIL', 'SMS', 'CALL'],
-  });
+  };
 
+  // MFA passthrough account — FedEx issues the child keys at Factor 1.
+  if (_childKeys(output).key || mfa.mfaRequired === false) {
+    const connection = await FedexAccountConnection.create({ ...base, status: 'awaiting_factor2', customerServiceBypass: true });
+    activityLogService.logActivity(userId, null, 'fedex_eula_accepted', { connectionId: connection.id });
+    return _markVerified(connection, _childKeys(output).key ? output : mfa);
+  }
+
+  if (!mfa.accountAuthToken) {
+    throw new ValidationError('FedEx did not return verification options for this account. Please contact FedEx Customer Service.');
+  }
+
+  const connection = await FedexAccountConnection.create({
+    ...base,
+    status: 'awaiting_factor2',
+    availablePinDeliveryOptions: mfa.options?.secureCode || [],
+    invoiceOptionAvailable: !!mfa.options?.invoice,
+    maskedPhoneNumber: mfa.phoneNumber || undefined,
+    accountAuthToken: mfa.accountAuthToken,
+    accountAuthTokenExpiresAt: _tokenExpiry(mfa.accountAuthToken),
+  });
   activityLogService.logActivity(userId, null, 'fedex_eula_accepted', { connectionId: connection.id });
   return sanitize(connection);
 }
@@ -172,46 +215,28 @@ async function _mockStartConnection(userId, { fedexAccountNumber, address, custo
 }
 
 // ---------------------------------------------------------------------------
-// startFactor2 — trigger PIN delivery or select invoice method
-//
-// For PIN methods: sends { option: "EMAIL"|"SMS"|"CALL", locale } to FedEx.
-// FedEx delivers the PIN to the customer's contact info on file.
-// For invoice: just updates DB record (invoice details sent during verification).
+// startFactor2 — PIN generation (EMAIL / SMS / CALL), or choose invoice
 // ---------------------------------------------------------------------------
 
 async function startFactor2(userId, connectionId, method) {
   const connection = await getOwnedConnection(userId, connectionId);
   assertNotLocked(connection);
-
-  if (isLive) {
-    try {
-      return await _liveStartFactor2(connection, method);
-    } catch (err) {
-      console.error('[FEDEX-REG] Live startFactor2 failed, falling back to mock:', err.message);
-      return _mockStartFactor2(connection, method);
-    }
-  }
-  return _mockStartFactor2(connection, method);
+  return isLive ? _liveStartFactor2(connection, method) : _mockStartFactor2(connection, method);
 }
 
 async function _liveStartFactor2(connection, method) {
-  if (method === 'invoice') {
-    connection.factor2Method = method;
-    await connection.save();
-    return sanitize(connection);
+  const accountAuthToken = _requireAccountAuthToken(connection);
+  if (method !== 'invoice') {
+    try {
+      await _registrationCall('/registration/v2/customerkeys/pingeneration',
+        { option: FACTOR2_METHOD_MAP[method], locale: LOCALE }, accountAuthToken);
+    } catch (err) {
+      console.error('[FEDEX-REG] PIN generation failed:', err.message, err.body?.transactionId || '');
+      throw new ValidationError(fedexErrorMessage(err, 'FedEx could not send a verification code. Please try another method.'));
+    }
+    connection.attempts = 0;
   }
-
-  // PIN methods — tell FedEx to deliver the PIN
-  const fedexOption = FACTOR2_METHOD_MAP[method];
-  const body = {
-    option: fedexOption,
-    locale: 'en_CA',
-  };
-
-  await _fedexRegistrationCall(body);
-
   connection.factor2Method = method;
-  connection.attempts = 0;
   await connection.save();
   return sanitize(connection);
 }
@@ -240,47 +265,27 @@ async function _mockStartFactor2(connection, method) {
 }
 
 // ---------------------------------------------------------------------------
-// verifyPin — submit PIN to FedEx for validation
-//
-// Sends { secureCodePin, customerName } to FedEx.
-// On success, FedEx returns customerKey/customerPassword.
+// verifyPin — PIN validation
 // ---------------------------------------------------------------------------
 
 async function verifyPin(userId, connectionId, code) {
   const connection = await getOwnedConnection(userId, connectionId);
   assertNotLocked(connection);
-
-  if (isLive) {
-    return _liveVerifyPin(connection, code);
-  }
-  return _mockVerifyPin(connection, code);
+  return isLive ? _liveVerifyPin(connection, code) : _mockVerifyPin(connection, code);
 }
 
 async function _liveVerifyPin(connection, code) {
-  const body = {
-    secureCodePin: code,
-    customerName: connection.customerName || 'Customer',
-  };
-
+  const accountAuthToken = _requireAccountAuthToken(connection);
+  let data;
   try {
-    const data = await _fedexRegistrationCall(body);
-
-    if (data.output?.customerKey) {
-      connection.status = 'verified';
-      connection.verifiedAt = new Date();
-      connection.childKey = data.output.customerKey;
-      connection.childSecret = data.output.customerPassword;
-      connection.pinCodeHash = null;
-      connection.pinExpiresAt = null;
-      await connection.save();
-      return sanitize(connection);
-    }
-
-    // FedEx did not return credentials — PIN may have been wrong
-    return recordFailedAttempt(connection, "That code didn't match.");
+    data = await _registrationCall('/registration/v2/pin/keysgeneration',
+      { secureCodePin: code, customerName: connection.customerName || 'Customer' }, accountAuthToken);
   } catch (err) {
-    return recordFailedAttempt(connection, err.message || "That code didn't match.");
+    console.error('[FEDEX-REG] PIN validation failed:', err.message, err.body?.transactionId || '');
+    return recordFailedAttempt(connection, fedexErrorMessage(err, "That code didn't match."));
   }
+  if (!_childKeys(data.output).key) return recordFailedAttempt(connection, "That code didn't match.");
+  return _markVerified(connection, data.output);
 }
 
 async function _mockVerifyPin(connection, code) {
@@ -297,50 +302,39 @@ async function _mockVerifyPin(connection, code) {
 }
 
 // ---------------------------------------------------------------------------
-// verifyInvoice — submit invoice to FedEx for validation
-//
-// Sends { invoiceDetail: { number, date, currency, amount }, customerName, locale }
-// to FedEx. On success, FedEx returns customerKey/customerPassword.
+// verifyInvoice — invoice validation
 // ---------------------------------------------------------------------------
 
 async function verifyInvoice(userId, connectionId, { invoiceNumber, invoiceDate, amount, currency }) {
   const connection = await getOwnedConnection(userId, connectionId);
   assertNotLocked(connection);
-
-  if (isLive) {
-    return _liveVerifyInvoice(connection, { invoiceNumber, invoiceDate, amount, currency });
-  }
-  return _mockVerifyInvoice(connection, { invoiceNumber, invoiceDate, amount, currency });
+  return isLive
+    ? _liveVerifyInvoice(connection, { invoiceNumber, invoiceDate, amount, currency })
+    : _mockVerifyInvoice(connection, { invoiceNumber, invoiceDate, amount, currency });
 }
 
 async function _liveVerifyInvoice(connection, { invoiceNumber, invoiceDate, amount, currency }) {
+  const accountAuthToken = _requireAccountAuthToken(connection);
   const body = {
     invoiceDetail: {
-      number: invoiceNumber,
+      number: String(invoiceNumber).trim(),
       date: invoiceDate,
       currency: currency || 'USD',
-      amount: String(amount),
+      amount: Number(amount).toFixed(2),
     },
     customerName: connection.customerName || 'Customer',
-    locale: 'en_CA',
+    locale: LOCALE,
   };
-
+  let data;
   try {
-    const data = await _fedexRegistrationCall(body);
-
-    if (data.output?.customerKey) {
-      connection.status = 'verified';
-      connection.verifiedAt = new Date();
-      connection.childKey = data.output.customerKey;
-      connection.childSecret = data.output.customerPassword;
-      await connection.save();
-      return sanitize(connection);
-    }
-
-    return recordFailedAttempt(connection, "Invoice doesn't exist for the provided details.");
+    data = await _registrationCall('/registration/v2/invoice/keysgeneration', body, accountAuthToken);
   } catch (err) {
-    return recordFailedAttempt(connection, err.message || "Invoice doesn't exist for the provided details.");
+    console.error('[FEDEX-REG] Invoice validation failed:', err.message, err.body?.transactionId || '');
+    return recordFailedAttempt(connection, fedexErrorMessage(err, "Invoice doesn't exist for the provided details."));
   }
+  connection.factor2Method = 'invoice';
+  if (!_childKeys(data.output).key) return recordFailedAttempt(connection, "Invoice doesn't exist for the provided details.");
+  return _markVerified(connection, data.output);
 }
 
 async function _mockVerifyInvoice(connection, { invoiceNumber, invoiceDate, amount, currency }) {
@@ -417,7 +411,7 @@ async function _mockFinalizeVerification(connection) {
 
 function sanitize(connection) {
   const obj = connection.toObject({ virtuals: true });
-  const { pinCodeHash, childSecret, ...rest } = obj;
+  const { pinCodeHash, childSecret, accountAuthToken, ...rest } = obj;
   return { ...rest, hasChildSecret: !!childSecret };
 }
 

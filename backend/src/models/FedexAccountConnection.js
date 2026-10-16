@@ -23,6 +23,12 @@ const fedexAccountConnectionSchema = new Schema({
   status: { type: String, default: 'awaiting_factor2' }, // awaiting_factor2 | verified | failed | locked
   factor2Method: String, // pin_email | pin_sms | pin_call | invoice
   availablePinDeliveryOptions: [String], // ['EMAIL', 'SMS', 'CALL'] from FedEx Factor 1 response
+  invoiceOptionAvailable: { type: Boolean, default: true }, // FedEx Factor 1 response offers INVOICE
+  maskedPhoneNumber: String, // e.g. '***-***-3021', shown next to the SMS/CALL options
+  // Registration v2: Factor 1 returns an account-scoped JWT that every Factor 2 call must send in
+  // an `accountAuthToken` header. Short-lived (~30 min), never returned to the browser.
+  accountAuthToken: String,
+  accountAuthTokenExpiresAt: Date,
   customerServiceBypass: { type: Boolean, default: false },
   pinCodeHash: String,   // mock mode only — bcrypt hash of local PIN
   pinExpiresAt: Date,    // mock mode only

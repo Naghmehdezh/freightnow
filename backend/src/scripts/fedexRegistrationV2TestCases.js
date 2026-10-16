@@ -30,6 +30,7 @@ const OUT_DIR = path.resolve(__dirname, '../../../fedex_test_output/registration
 // on one line) — FedEx returns ACCOUNT.ADDRESS.MISMATCH for a 5-digit ZIP or split street lines.
 const ACCOUNTS = {
   700257037: { streetLines: ['15 W 18TH ST FL 7'], city: 'NEW YORK', stateOrProvinceCode: 'NY', postalCode: '100114624', countryCode: 'US' },
+  614365501: { streetLines: ['5985 EXPLORER DR'], city: 'Mississauga', stateOrProvinceCode: 'ON', postalCode: 'L4W5K6', countryCode: 'CA' },
   740561073: { streetLines: ['40 FED EX PKWY FL 2'], city: 'COLLIERVILLE', stateOrProvinceCode: 'TN', postalCode: '380178711', countryCode: 'US' },
 };
 const DEFAULT_PIN = '234560';

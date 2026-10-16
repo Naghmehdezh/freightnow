@@ -13,7 +13,10 @@ const invoiceService = require('./invoice.service');
 const fedexAddr = require('./fedexAddressValidation.service');
 const dhlAddr = require('./dhlAddressValidation.service');
 
-async function createBooking(userId, { quoteId, quoteRateId, customerReference, paymentMethodId }) {
+async function createBooking(userId, {
+  quoteId, quoteRateId, customerReference, paymentMethodId,
+  shipper, recipient, holdAtLocation, dangerousGoods,
+}) {
   const quote = await Quote.findOne({ _id: quoteId, user: userId }).populate('user');
   if (!quote) throw new NotFoundError('Quote');
   if (quote.status === 'expired') throw new ValidationError('This quote has expired');
@@ -22,17 +25,30 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
   const selectedRate = await QuoteRate.findOne({ _id: quoteRateId, quote: quote._id });
   if (!selectedRate) throw new NotFoundError('Rate');
 
+  // Options quoted for this shipment that need more details at booking time.
+  const accessorials = parseAccessorials(quote.accessorials);
+  const isParcel = ['parcel', 'envelope'].includes(quote.shipmentType);
+  if (accessorials.includes('hold_at_location') && selectedRate.carrierId === 'fedex' && !holdAtLocation) {
+    throw new ValidationError('Choose the FedEx location where the shipment will be held.');
+  }
+  if (isParcel && accessorials.includes('hazmat') && quote.options?.dgType !== 'BATTERY' && !dangerousGoods) {
+    throw new ValidationError('Dangerous goods details (UN number, shipping name, class, quantity, emergency phone) are required.');
+  }
+
+  const company = quote.user.company ? await Company.findById(quote.user.company) : null;
+  const bookingInput = { shipper, recipient, holdAtLocation, dangerousGoods };
+
   // Validate origin and destination addresses via FedEx + DHL (server-side gate).
   // Address is considered valid if at least one carrier validates it.
   try {
     const addrOrig = {
-      streetLines: [quote.originCity || quote.originPostal || ''],
+      streetLines: [shipper?.street1 || company?.street || quote.originCity || quote.originPostal || ''],
       city: quote.originCity || '',
       postalCode: quote.originPostal || '',
       countryCode: quote.originCountry || 'CA',
     };
     const addrDest = {
-      streetLines: [quote.destCity || quote.destPostal || ''],
+      streetLines: [recipient?.street1 || quote.destCity || quote.destPostal || ''],
       city: quote.destCity || '',
       postalCode: quote.destPostal || '',
       countryCode: quote.destCountry || 'US',
@@ -60,7 +76,6 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
   }
 
   // Determine payment terms for this company
-  const company = quote.user.company ? await Company.findById(quote.user.company) : null;
   const paymentTerms = company?.paymentTerms || 'card';
 
   // For card-paying customers, charge before creating the booking
@@ -84,7 +99,7 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
           companyId,
           userId,
           amount: selectedRate.displayRate,
-          currency: quote.currency,
+          currency: selectedRate.currency || 'CAD',
           paymentMethodId: pm._id,
         });
       } catch (payErr) {
@@ -112,14 +127,15 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
         serviceName: selectedRate.serviceName,
         costRate: selectedRate.baseRate,
         sellRate: selectedRate.displayRate,
-        currency: quote.currency,
+        // The booked rate's own currency (a quote can mix CAD and USD carrier rates).
+        currency: selectedRate.currency || 'CAD',
         customerReference,
         paymentStatus,
       }], { session });
 
       await Quote.updateOne({ _id: quote._id }, { status: 'booked' }, { session });
 
-      const shipment = await shipmentService.createShipmentForBooking(session, booking, quote, selectedRate);
+      const shipment = await shipmentService.createShipmentForBooking(session, booking, quote, selectedRate, bookingInput, company);
 
       // If we charged via QB, update the payment record with the booking ID
       if (paymentResult) {
@@ -133,11 +149,12 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
     // Attempt real carrier booking (outside transaction — graceful degradation on failure)
     try {
       const carrierResult = await shipmentService.bookWithCarrier(
-        result.shipment, quote, selectedRate, company,
+        result.shipment, quote, selectedRate, company, bookingInput,
       );
       if (carrierResult) {
         result.carrierTrackingNumber = carrierResult.carrierTrackingNumber;
         result.label = carrierResult.label;
+        result.manualCarrierBooking = carrierResult.manualCarrierBooking;
       }
     } catch (err) {
       console.error('[BOOKING] Carrier booking failed (using IFF tracking):', err.message);
@@ -160,6 +177,10 @@ async function createBooking(userId, { quoteId, quoteRateId, customerReference, 
   } finally {
     session.endSession();
   }
+}
+
+function parseAccessorials(raw) {
+  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
 
 async function getUserBookings(userId, { status, page = 1, limit = 10 } = {}) {

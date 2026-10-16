@@ -14,7 +14,8 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 
 const path = require('path');
 const fs = require('fs');
-const { getToken, getBaseUrl, httpsPost } = require('../services/fedexAuth.service');
+const { getBaseUrl, httpsPost } = require('../services/fedexAuth.service');
+const { getTestAccountToken } = require('./fedexTestAccountToken');
 
 const OUT_DIR = path.resolve(__dirname, '../../../fedex_test_output');
 
@@ -112,12 +113,15 @@ async function run() {
   fs.writeFileSync(reqPath, JSON.stringify(requestBody, null, 2));
   console.log(`✓ Request saved: ${reqPath}`);
 
-  // Get OAuth token and call FedEx Rate API
-  console.log('Acquiring OAuth token...');
-  const token = await getToken();
-  console.log('Token acquired. Calling Rate API...');
+  // The CA test account must be registered first; rate calls then use its own CSP token
+  // (the project's parent token gets ACCOUNT.NUMBER.MISMATCH for a test account).
+  const reg = await getTestAccountToken(CA_TEST_ACCOUNT);
+  const token = reg.accessToken;
+  console.log(`Registered test account ${CA_TEST_ACCOUNT} (registration txn ${reg.registrationTxn}). Calling Comprehensive Rates...`);
 
-  const url = `${getBaseUrl()}/rate/v1/rates/quotes`;
+  // FedEx requires Integrators to use Comprehensive Rates and Transit Times; the plain Rate
+  // API (/rate/v1/rates/quotes) returns 403 for this project.
+  const url = `${getBaseUrl()}/rate/v1/comprehensiverates/quotes`;
   const headers = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
@@ -137,14 +141,21 @@ async function run() {
         await new Promise(r => setTimeout(r, 500));
         continue;
       }
-      throw err;
+      fs.writeFileSync(path.join(OUT_DIR, 'IntegratorCA06_response_ERROR.json'), JSON.stringify(err.body || { error: err.message }, null, 2));
+      const reasons = err.body?.errors?.map(e => `${e.code}: ${e.message}`).join('; ');
+      throw new Error(`${err.message}${reasons ? ` — ${reasons}` : ''} (transactionId ${err.body?.transactionId || 'n/a'})`);
     }
   }
+
+  // Remove an error file left by an earlier failed run.
+  const staleErr = path.join(OUT_DIR, 'IntegratorCA06_response_ERROR.json');
+  if (fs.existsSync(staleErr)) fs.unlinkSync(staleErr);
 
   // Save response
   const resPath = path.join(OUT_DIR, 'IntegratorCA06_response.json');
   fs.writeFileSync(resPath, JSON.stringify(response, null, 2));
   console.log(`✓ Response saved: ${resPath}`);
+  console.log(`✓ transactionId: ${response.transactionId}`);
 
   // Print summary
   const details = response.output?.rateReplyDetails || [];

@@ -3,6 +3,7 @@ import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { fetchAPI } from '@/lib/api';
 import s from './page.module.css';
+import { FEDEX_DISCLAIMER, FEDEX_DISCLAIMER_STYLE } from '@/lib/fedexCompliance';
 
 const DEMO_SHIPMENTS = [
   { id: 'IFF-2026-00341', bookingNumber: 'BK-2026-0012', tracking: '1Z999AA1234567890', route: 'Toronto → Chicago', carrier: 'FedEx Freight', type: 'LTL', weight: '500 lbs', booked: 'May 20', delivery: 'May 24', cost: 'C$312.40', status: 'delivered', origin: 'Toronto, ON M5V 3A8', dest: 'Chicago, IL 60601', pieces: '2 pallets', service: 'Freight Economy' },
@@ -115,7 +116,7 @@ export default function ShipmentsPage() {
                   <td>{ship.weight ? `${ship.weight}` : '—'}</td>
                   <td>{ship.booked || ship.bookedAt?.split('T')[0]}</td>
                   <td>{ship.delivery || ship.estimatedDelivery?.split('T')[0] || '—'}</td>
-                  <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{ship.cost || (ship.booking?.sellRate ? `C$${ship.booking.sellRate.toFixed(2)}` : '—')}</td>
+                  <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{ship.cost || (ship.booking?.sellRate ? `${ship.booking.currency === 'USD' ? 'US$' : 'C$'}${ship.booking.sellRate.toFixed(2)}` : '—')}</td>
                   <td><span className={`${s.badge} ${getBadgeClass(ship.status)}`}>{getBadgeLabel(ship.status)}</span></td>
                   <td><button className={s.btnAction} onClick={() => setExpandedRow(expandedRow === i ? null : i)}>Details</button></td>
                 </tr>
@@ -127,7 +128,7 @@ export default function ShipmentsPage() {
                         <div><div className={s.detailLabel}>Destination</div><div className={s.detailValue}>{ship.dest || `${ship.destCity || ''}, ${ship.destPostal || ''}`}</div></div>
                         <div><div className={s.detailLabel}>Pieces</div><div className={s.detailValue}>{ship.pieces || ship.pieces}</div><div className={s.detailSub}>{ship.weight ? `${ship.weight} lbs` : '—'}</div></div>
                         <div><div className={s.detailLabel}>Service</div><div className={s.detailValue}>{ship.service || ship.serviceName}</div><div className={s.detailSub}>{ship.carrier || ship.carrierName}</div></div>
-                        <div><div className={s.detailLabel}>Cost</div><div className={s.detailValue}>{ship.cost || (ship.booking?.sellRate ? `C$${ship.booking.sellRate.toFixed(2)}` : '—')}</div></div>
+                        <div><div className={s.detailLabel}>Cost</div><div className={s.detailValue}>{ship.cost || (ship.booking?.sellRate ? `${ship.booking.currency === 'USD' ? 'US$' : 'C$'}${ship.booking.sellRate.toFixed(2)}` : '—')}</div></div>
                         <div><div className={s.detailLabel}>Booked</div><div className={s.detailValue}>{ship.booked || ship.bookedAt?.split('T')[0]}</div></div>
                         <div><div className={s.detailLabel}>Est. delivery</div><div className={s.detailValue}>{ship.delivery || ship.estimatedDelivery?.split('T')[0] || '—'}</div></div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
@@ -151,6 +152,8 @@ export default function ShipmentsPage() {
           </tbody>
         </table>
       </div>
+      {/* Required on every screen showing FedEx marks or service names (FedEx Integrator validation). */}
+      {filtered.some(sh => /fedex/i.test(`${sh.carrier || sh.carrierName || ''}`)) && <p style={{ ...FEDEX_DISCLAIMER_STYLE, marginTop: 16 }}>{FEDEX_DISCLAIMER}</p>}
     </div>
   );
 }

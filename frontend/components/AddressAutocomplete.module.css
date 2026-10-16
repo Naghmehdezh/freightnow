@@ -1,0 +1,8 @@
+.wrap { position: relative; margin-bottom: 10px; }
+.list { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; margin: 4px 0 0; padding: 4px 0; list-style: none; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-md); max-height: 280px; overflow-y: auto; }
+.item { padding: 8px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.active { background: var(--sky); }
+.main { font-size: 13px; color: var(--text); font-weight: 600; }
+.secondary { font-size: 11px; color: var(--text3); }
+.powered { padding: 6px 12px 4px; font-size: 10px; color: var(--text3); text-align: right; border-top: 1px solid var(--border); margin-top: 4px; }
+.status { font-size: 11px; color: var(--text3); margin-top: 4px; }

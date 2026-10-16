@@ -1,0 +1,7 @@
+.wrap { margin: 8px 0 10px; }
+.box { overflow-y: auto; border: 1.5px solid var(--border); border-radius: 8px; background: #e9edf3; padding: 10px; }
+.box:focus { outline: none; border-color: var(--navy); }
+.pages { display: flex; flex-direction: column; gap: 10px; }
+.page { display: block; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.loading { font-size: 13px; color: var(--text3); padding: 16px; text-align: center; }
+.meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text3); margin-top: 6px; }

@@ -249,7 +249,8 @@ Quote → Booking (one-to-one, when booked) → Shipment (one-to-one, once carri
 | `POST /api/auth/login` | Login step 1 — verifies password, emails a 6-digit code, returns `{twoFactorRequired, pendingToken}` (no JWT yet) |
 | `POST /api/auth/verify-otp` | Login step 2 — verifies the code, returns the real JWT |
 | `POST /api/auth/resend-otp` | Resend the login verification code |
-| `POST /api/bookings` | Book a quote (creates a Booking + the resulting Shipment) |
+| `POST /api/bookings` | Book a quote (creates a Booking + the resulting Shipment). Body adds `recipient` (required) and `shipper` contact/street, `holdAtLocation`, `dangerousGoods` when the quoted options need them |
+| `GET /api/fedex/locations?quoteRateId=` | FedEx locations near the quote's destination that accept Hold at Location for the quoted service |
 | `GET /api/bookings` | List user bookings |
 | `GET /api/shipments` | List user shipments (filter: ?status=in_transit) — read-only; booking happens via `/api/bookings` |
 | `GET /api/tracking/:number` | Track a shipment |

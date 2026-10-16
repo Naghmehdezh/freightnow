@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchAPI } from '@/lib/api';
 import useRole from '@/lib/useRole';
@@ -109,8 +109,13 @@ function Overview() {
         <div className={s.tiles}>
           <Tile label="Quotes" value={data.quotes} sub={`${data.rateOptions} carrier options`} />
           <Tile label="Shipments booked" value={data.shipmentsBooked} sub={`${pct(data.conversionPct)} conversion`} />
-          <Tile label="Booked revenue" value={`$${money(data.bookedSell)}`} sub={`cost $${money(data.bookedCost)}`} />
-          <Tile label="Booked gross margin" value={`$${money(data.bookedGrossMargin)}`} sub={`${pct(data.bookedMarginPct)} over cost`} />
+          {/* CAD and USD bookings are never added together — one pair of tiles per currency. */}
+          {Object.entries(data.bookedByCurrency || {}).map(([cur, t]) => (
+            <Fragment key={cur}>
+              <Tile label={`Booked revenue (${cur})`} value={`$${money(t.sell)} ${cur}`} sub={`${t.shipments} shipments · cost $${money(t.cost)}`} />
+              <Tile label={`Booked gross margin (${cur})`} value={`$${money(t.grossMargin)} ${cur}`} sub={`${pct(t.marginPct)} over cost`} />
+            </Fragment>
+          ))}
           <Tile label="Median markup offered" value={pct(data.medianAchievedMarkupPct)} sub={`average ${pct(data.avgAchievedMarkupPct)}`} />
           <Tile label="Manually adjusted" value={data.adjustedRates} sub="rate options" />
         </div>
@@ -199,7 +204,7 @@ function Quotes() {
                   <>
                     <td rowSpan={q.rates.length} className={s.quoteCell}>
                       <div className={s.mono}>{q.quoteNumber}</div>
-                      <div className={s.small}>{new Date(q.createdAt).toLocaleDateString('en-CA')} · {q.shipmentType.toUpperCase()} · {q.currency}</div>
+                      <div className={s.small}>{new Date(q.createdAt).toLocaleDateString('en-CA')} · {q.shipmentType.toUpperCase()}</div>
                       <div className={s.small}>{q.lane}</div>
                     </td>
                     <td rowSpan={q.rates.length}>
@@ -212,7 +217,7 @@ function Quotes() {
                   <div>{r.carrierName}</div>
                   <div className={s.small}>{r.serviceName}</div>
                 </td>
-                <td className={s.num}>{money(r.cost)}</td>
+                <td className={s.num}>{money(r.cost)} <span className={s.small}>{r.currency}</span></td>
                 <td className={s.num}>{money(r.enginePrice)}</td>
                 <td className={`${s.num} ${r.adjustment ? s.adjusted : ''}`}>
                   {money(r.finalPrice)}
@@ -302,7 +307,7 @@ function AdjustModal({ quote, rate, onClose, onSaved }) {
     <div className={s.overlay} onClick={onClose}>
       <div className={s.modal} onClick={e => e.stopPropagation()}>
         <div className={s.cardTitle}>Adjust price</div>
-        <div className={s.sub}>{quote.quoteNumber} · {rate.carrierName} — {rate.serviceName} · {quote.currency}</div>
+        <div className={s.sub}>{quote.quoteNumber} · {rate.carrierName} — {rate.serviceName} · {rate.currency}</div>
 
         {rate.booking && (
           <div className={s.info}>
@@ -328,7 +333,7 @@ function AdjustModal({ quote, rate, onClose, onSaved }) {
             <input className={s.input} type="number" min="0" max="100" step="0.5" value={discountPct} onChange={e => setDiscountPct(e.target.value)} placeholder="e.g. 10" />
           </label>
         ) : (
-          <label className={s.field}>New price ({quote.currency})
+          <label className={s.field}>New price ({rate.currency})
             <input className={s.input} type="number" min="0" step="0.01" value={newRate} onChange={e => setNewRate(e.target.value)} />
           </label>
         )}

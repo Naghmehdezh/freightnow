@@ -2,6 +2,82 @@ const CarrierAdapter = require('./CarrierAdapter');
 const { addBusinessDays, formatDate } = require('../utils/dateHelpers');
 const { getToken, getBaseUrl, httpsPost, invalidateToken } = require('../services/fedexAuth.service');
 const { carriers } = require('../config/env');
+const validationMode = require('../services/fedexValidationMode');
+
+// Official FedEx service names with their registered marks, exactly as FedEx requires them to be
+// displayed (Integrator validation: e.g. "FedEx Ground®", "FedEx International Priority® Express").
+const FEDEX_SERVICE_NAMES = {
+  FEDEX_GROUND: 'FedEx Ground®',
+  GROUND_HOME_DELIVERY: 'FedEx Home Delivery®',
+  SMART_POST: 'FedEx Ground® Economy',
+  FEDEX_EXPRESS_SAVER: 'FedEx Express Saver®',
+  FEDEX_ECONOMY: 'FedEx Economy®',
+  FEDEX_2_DAY: 'FedEx 2Day®',
+  FEDEX_2_DAY_AM: 'FedEx 2Day® A.M.',
+  STANDARD_OVERNIGHT: 'FedEx Standard Overnight®',
+  PRIORITY_OVERNIGHT: 'FedEx Priority Overnight®',
+  FIRST_OVERNIGHT: 'FedEx First Overnight®',
+  FEDEX_1_DAY_FREIGHT: 'FedEx 1Day® Freight',
+  FEDEX_2_DAY_FREIGHT: 'FedEx 2Day® Freight',
+  FEDEX_3_DAY_FREIGHT: 'FedEx 3Day® Freight',
+  FEDEX_FIRST_FREIGHT: 'FedEx First Overnight® Freight',
+  FEDEX_FREIGHT_ECONOMY: 'FedEx Freight® Economy',
+  FEDEX_FREIGHT_PRIORITY: 'FedEx Freight® Priority',
+  FEDEX_INTERNATIONAL_PRIORITY: 'FedEx International Priority®',
+  INTERNATIONAL_PRIORITY: 'FedEx International Priority®',
+  FEDEX_INTERNATIONAL_PRIORITY_EXPRESS: 'FedEx International Priority® Express',
+  INTERNATIONAL_ECONOMY: 'FedEx International Economy®',
+  FEDEX_INTERNATIONAL_ECONOMY: 'FedEx International Economy®',
+  INTERNATIONAL_FIRST: 'FedEx International First®',
+  FEDEX_INTERNATIONAL_GROUND: 'FedEx International Ground®',
+  INTERNATIONAL_PRIORITY_FREIGHT: 'FedEx International Priority® Freight',
+  INTERNATIONAL_ECONOMY_FREIGHT: 'FedEx International Economy® Freight',
+  FEDEX_INTERNATIONAL_CONNECT_PLUS: 'FedEx® International Connect Plus',
+  FEDEX_REGIONAL_ECONOMY: 'FedEx® Regional Economy',
+  FEDEX_REGIONAL_ECONOMY_FREIGHT: 'FedEx® Regional Economy Freight',
+  FEDEX_INTERNATIONAL_DEFERRED_FREIGHT: 'FedEx® International Deferred Freight',
+  FEDEX_FIRST: 'FedEx First®',
+  FEDEX_PRIORITY: 'FedEx® Priority',
+  FEDEX_PRIORITY_EXPRESS: 'FedEx® Priority Express',
+  FEDEX_PRIORITY_EXPRESS_FREIGHT: 'FedEx® Priority Express Freight',
+  FEDEX_PRIORITY_FREIGHT: 'FedEx® Priority Freight',
+  FEDEX_DEFERRED_FREIGHT: 'FedEx® Deferred Freight',
+  INTERNATIONAL_PRIORITY_DISTRIBUTION: 'FedEx International Priority DirectDistribution®',
+};
+
+// Services IFF declared in its FedEx Product Information Worksheet (PIW) — only these are
+// offered. Not declared (so never shown): the DirectDistribution / consolidation services,
+// FedEx Ground® Economy bound printed matter and media mail.
+const PIW_SERVICES = new Set([
+  'FEDEX_1_DAY_FREIGHT', 'FEDEX_2_DAY_AM', 'FEDEX_2_DAY', 'FEDEX_2_DAY_FREIGHT', 'FEDEX_3_DAY_FREIGHT',
+  'FEDEX_DEFERRED_FREIGHT', 'FEDEX_ECONOMY', 'FEDEX_ECONOMY_SELECT', 'FEDEX_EXPRESS_SAVER', 'FEDEX_FIRST',
+  'FIRST_OVERNIGHT', 'FEDEX_FIRST_FREIGHT', 'FEDEX_GROUND', 'SMART_POST', 'FEDEX_GROUND_ECONOMY',
+  'GROUND_HOME_DELIVERY', 'FEDEX_PRIORITY', 'FEDEX_PRIORITY_EXPRESS', 'FEDEX_PRIORITY_EXPRESS_FREIGHT',
+  'FEDEX_PRIORITY_FREIGHT', 'PRIORITY_OVERNIGHT', 'STANDARD_OVERNIGHT',
+  'FEDEX_FREIGHT_ECONOMY', 'FEDEX_FREIGHT_PRIORITY',
+  'FEDEX_INTERNATIONAL_CONNECT_PLUS', 'FEDEX_INTERNATIONAL_DEFERRED_FREIGHT', 'INTERNATIONAL_ECONOMY',
+  'FEDEX_INTERNATIONAL_ECONOMY', 'INTERNATIONAL_ECONOMY_FREIGHT', 'INTERNATIONAL_FIRST',
+  'FEDEX_INTERNATIONAL_GROUND', 'INTERNATIONAL_GROUND', 'FEDEX_INTERNATIONAL_PRIORITY', 'INTERNATIONAL_PRIORITY',
+  'FEDEX_INTERNATIONAL_PRIORITY_EXPRESS', 'INTERNATIONAL_PRIORITY_FREIGHT',
+  'FEDEX_REGIONAL_ECONOMY', 'FEDEX_REGIONAL_ECONOMY_FREIGHT',
+]);
+const LTL_SERVICES = new Set(['FEDEX_FREIGHT_ECONOMY', 'FEDEX_FREIGHT_PRIORITY']);
+const GROUND_SERVICES = new Set(['FEDEX_GROUND', 'GROUND_HOME_DELIVERY', 'SMART_POST', 'FEDEX_GROUND_ECONOMY',
+  'FEDEX_INTERNATIONAL_GROUND', 'INTERNATIONAL_GROUND']);
+
+// Plain names FedEx sometimes returns (e.g. Track's "FedEx Ground") → trademarked form.
+const PLAIN_TO_MARKED = Object.fromEntries(
+  Object.values(FEDEX_SERVICE_NAMES).map(n => [n.replace(/®/g, '').replace(/\s+/g, ' ').trim().toLowerCase(), n])
+);
+
+function fedexServiceName(code, description) {
+  if (code && FEDEX_SERVICE_NAMES[code]) return FEDEX_SERVICE_NAMES[code];
+  if (description) {
+    if (description.includes('®')) return description;
+    return PLAIN_TO_MARKED[description.replace(/\s+/g, ' ').trim().toLowerCase()] || description;
+  }
+  return code ? code.replace(/_/g, ' ') : '';
+}
 
 class FedExAdapter extends CarrierAdapter {
   get id() { return 'fedex'; }
@@ -20,27 +96,56 @@ class FedExAdapter extends CarrierAdapter {
 
   async _getLiveRates(params) {
     const { shipmentType, origin, destination, weight, pieces, dimensions, pickupDate, accessorials = [] } = params;
-    const token = await getToken();
-    const accountNumber = carriers.fedex.accountNumber;
+    // Validation mode (temporary): rate under FedEx's test account for the origin country,
+    // with that account's own token, so the UI matches FedEx's test-case responses.
+    const testAccount = validationMode.isOn() ? validationMode.testAccountFor(origin.country) : null;
+    const token = testAccount ? await validationMode.tokenFor(testAccount) : await getToken();
+    const accountNumber = testAccount || carriers.fedex.accountNumber;
+    console.log(`[FEDEX-RATE] Rating with account ${accountNumber}${testAccount ? ' (FedEx test account — validation mode, own CSP token)' : ''}, packaging ${params.fedexPackaging || 'YOUR_PACKAGING'}`);
 
     const shipDate = pickupDate || new Date().toISOString().split('T')[0];
 
     // Use YOUR_PACKAGING for all shipment types — FEDEX_ENVELOPE restricts which
     // services FedEx will return and causes SERVICE.PACKAGECOMBINATION.INVALID errors
     // when no specific serviceType is requested (we ask FedEx for all available services).
-    const packagingType = 'YOUR_PACKAGING';
+    // Customer packaging unless a FedEx-branded package was chosen (e.g. FEDEX_TUBE,
+    // FEDEX_MEDIUM_BOX — FedEx prices these differently, and One Rate requires them).
+    const packagingType = params.fedexPackaging || 'YOUR_PACKAGING';
 
     // Build requested service types based on shipment type
     const serviceTypes = this._getFedExServiceTypes(shipmentType);
 
-    // Build special services from accessorials
-    const specialServiceTypes = this._mapAccessorialsToFedEx(accessorials);
+    const usDomestic = (origin.country || '').toUpperCase() === 'US' && (destination.country || '').toUpperCase() === 'US';
+
+    // Build special services from accessorials. null = FedEx can't do what the customer asked
+    // for on this shipment, so FedEx is left out of the results rather than quoted without it.
+    const special = this._mapAccessorialsToFedEx(accessorials, {
+      usDomestic, shipDate,
+      dgType: params.dgType,
+      battery: params.battery,
+      homeDeliveryDate: params.homeDeliveryDate,
+    });
+    if (!special) return [];
+    const specialServiceTypes = special.shipmentTypes;
+    // FedEx One Rate® is US-domestic only and needs FedEx packaging — sending it on any other
+    // shipment makes FedEx reject the whole request (SERVICE.PACKAGECOMBINATION.INVALID).
+    if (params.fedexOneRate && packagingType !== 'YOUR_PACKAGING' && usDomestic) specialServiceTypes.push('FEDEX_ONE_RATE');
 
     // Build the package line item
     const packageLineItem = {
       weight: { units: 'LB', value: weight || 1 },
+      ...(special.packageSpecialServices && { packageSpecialServices: special.packageSpecialServices }),
+      // Declared value (extended liability) — FedEx adds its declared-value charge above the
+      // standard liability limit.
+      ...(params.declaredValue > 0 && {
+        declaredValue: {
+          amount: params.declaredValue,
+          currency: params.currency || ((origin.country || '').toUpperCase() === 'US' ? 'USD' : 'CAD'),
+        },
+      }),
     };
-    if (dimensions && dimensions.length && dimensions.width && dimensions.height) {
+    // FedEx-branded packaging has fixed dimensions — only send them for customer packaging.
+    if (packagingType === 'YOUR_PACKAGING' && dimensions && dimensions.length && dimensions.width && dimensions.height) {
       packageLineItem.dimensions = {
         length: Math.round(dimensions.length),
         width: Math.round(dimensions.width),
@@ -72,6 +177,8 @@ class FedExAdapter extends CarrierAdapter {
             postalCode: destination.postalCode || '',
             countryCode: destination.country || 'US',
             ...(destination.city && { city: destination.city }),
+            // FedEx adds its residential surcharge (and offers FedEx Home Delivery®) from this flag.
+            ...(special.residential && { residential: true }),
           },
         },
         shippingChargesPayment: {
@@ -90,6 +197,7 @@ class FedExAdapter extends CarrierAdapter {
     if (specialServiceTypes.length > 0) {
       body.requestedShipment.shipmentSpecialServices = {
         specialServiceTypes,
+        ...(special.homeDeliveryPremiumDetail && { homeDeliveryPremiumDetail: special.homeDeliveryPremiumDetail }),
       };
     }
 
@@ -120,65 +228,49 @@ class FedExAdapter extends CarrierAdapter {
     };
     const bodyStr = JSON.stringify(body);
 
-    // FedEx sandbox sometimes rejects requests with 401/503 while tokens
-    // propagate across gateway nodes — retry up to 2 times with a brief delay.
-    // On 401, invalidate the cached token and re-authenticate before retrying.
+    // FedEx's sandbox regularly returns transient 500/503 errors (and 401 while tokens propagate
+    // across gateway nodes). Retry with a growing delay; refresh the parent token on 401.
+    const MAX_ATTEMPTS = 6;
     let data;
-    let lastErr;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 1; ; attempt++) {
       try {
         data = await httpsPost(url, bodyStr, rateHeaders);
         break;
       } catch (err) {
-        lastErr = err;
-        if ((err.message.includes('401') || err.message.includes('503')) && attempt < 2) {
-          if (err.message.includes('401')) {
-            invalidateToken();
-            const freshToken = await getToken();
-            rateHeaders.Authorization = `Bearer ${freshToken}`;
-          }
-          await new Promise(r => setTimeout(r, 500));
-          continue;
+        const transient = [401, 500, 502, 503, 504].includes(err.statusCode);
+        if (!transient || attempt >= MAX_ATTEMPTS) throw err;
+        if (err.statusCode === 401 && !testAccount) {
+          invalidateToken();
+          rateHeaders.Authorization = `Bearer ${await getToken()}`;
         }
-        throw err;
+        console.log(`[FEDEX-RATE] FedEx returned ${err.statusCode}; retry ${attempt}/${MAX_ATTEMPTS - 1}…`);
+        await new Promise(r => setTimeout(r, Math.min(1000 * attempt, 4000)));
       }
     }
-    return this._parseRateResponse(data, shipmentType, shipDate);
+    return this._parseRateResponse(data, shipmentType, shipDate, { saturday: special.saturday });
   }
 
-  _parseRateResponse(data, shipmentType, shipDate) {
+  _parseRateResponse(data, shipmentType, shipDate, { saturday = false } = {}) {
     const rateDetails = data.output?.rateReplyDetails || [];
     if (rateDetails.length === 0) {
       console.warn('[FEDEX-RATE] No rate details returned');
       return [];
     }
 
-    // Map FedEx service type codes to friendly names
-    const serviceNameMap = {
-      'FEDEX_EXPRESS_SAVER': 'Express Saver',
-      'FEDEX_GROUND': 'Ground',
-      'FEDEX_2_DAY': '2Day',
-      'FEDEX_2_DAY_AM': '2Day AM',
-      'PRIORITY_OVERNIGHT': 'Priority Overnight',
-      'STANDARD_OVERNIGHT': 'Standard Overnight',
-      'FIRST_OVERNIGHT': 'First Overnight',
-      'FEDEX_FREIGHT_ECONOMY': 'Freight Economy',
-      'FEDEX_FREIGHT_PRIORITY': 'Freight Priority',
-      'FEDEX_INTERNATIONAL_PRIORITY': 'International Priority',
-      'FEDEX_INTERNATIONAL_ECONOMY': 'International Economy',
-      'INTERNATIONAL_ECONOMY': 'International Economy',
-      'INTERNATIONAL_FIRST': 'International First',
-      'FEDEX_INTERNATIONAL_PRIORITY_EXPRESS': 'International Priority Express',
-      'GROUND_HOME_DELIVERY': 'Home Delivery',
-      'SMART_POST': 'Ground Economy',
-      'FEDEX_INTERNATIONAL_GROUND': 'International Ground',
-      'FEDEX_FIRST_FREIGHT': 'First Freight',
-    };
 
     const rates = [];
     for (const detail of rateDetails) {
       const serviceType = detail.serviceType || '';
-      const serviceName = serviceNameMap[serviceType] || serviceType.replace(/_/g, ' ').replace(/FEDEX /i, '');
+      // When the ship date allows it, FedEx returns each service twice — normal and with
+      // Saturday delivery. Keep only the Saturday ones when the customer asked for it.
+      if (Boolean(detail.commit?.saturdayDelivery) !== saturday) continue;
+      // FedEx returns the official, trademarked name (e.g. "FedEx International Economy®") —
+      // required verbatim for Integrator validation, so it's preferred over any local mapping.
+      // Use FedEx's own name when it carries the ® marks; otherwise our trademarked list
+      // (the sandbox sometimes returns plain names, e.g. "FedEx Economy").
+      const serviceName = detail.serviceName?.includes('®')
+        ? detail.serviceName
+        : fedexServiceName(serviceType, detail.serviceName);
 
       // Get the best available rate (prefer ACCOUNT, fall back to LIST)
       const ratedShipmentDetails = detail.ratedShipmentDetails || [];
@@ -286,34 +378,86 @@ class FedExAdapter extends CarrierAdapter {
   }
 
   _isServiceRelevant(serviceType, shipmentType) {
-    const freightServices = ['FEDEX_FREIGHT_ECONOMY', 'FEDEX_FREIGHT_PRIORITY', 'FEDEX_FIRST_FREIGHT'];
-    const expressServices = ['FEDEX_EXPRESS_SAVER', 'PRIORITY_OVERNIGHT', 'STANDARD_OVERNIGHT', 'FIRST_OVERNIGHT',
-      'FEDEX_2_DAY', 'FEDEX_2_DAY_AM', 'FEDEX_INTERNATIONAL_PRIORITY', 'FEDEX_INTERNATIONAL_ECONOMY',
-      'INTERNATIONAL_ECONOMY', 'INTERNATIONAL_FIRST', 'FEDEX_INTERNATIONAL_PRIORITY_EXPRESS'];
-    const groundServices = ['FEDEX_GROUND', 'GROUND_HOME_DELIVERY', 'SMART_POST', 'FEDEX_INTERNATIONAL_GROUND'];
-
-    if (shipmentType === 'ltl') {
-      return freightServices.includes(serviceType);
-    }
-    if (shipmentType === 'envelope') {
-      return expressServices.includes(serviceType);
-    }
-    // Parcel: show both express and ground
-    return expressServices.includes(serviceType) || groundServices.includes(serviceType);
+    if (!PIW_SERVICES.has(serviceType)) return false;
+    // FedEx Freight® LTL services belong to LTL quotes only.
+    if (shipmentType === 'ltl') return LTL_SERVICES.has(serviceType);
+    if (LTL_SERVICES.has(serviceType)) return false;
+    // Envelopes: express (air) services only, no freight.
+    if (shipmentType === 'envelope') return !GROUND_SERVICES.has(serviceType) && !serviceType.includes('FREIGHT');
+    // Parcels: everything declared, including Express Freight (the only services FedEx returns
+    // for heavy parcels, e.g. 200 lb → FedEx 1Day® Freight).
+    return true;
   }
 
-  _mapAccessorialsToFedEx(accessorials) {
-    const map = {
-      'residential': 'HOME_DELIVERY_PREMIUM',
-      'saturday': 'SATURDAY_DELIVERY',
-      'signature': 'SIGNATURE_OPTION',
-      'hazmat': 'DANGEROUS_GOODS',
-      'inside_delivery': 'INSIDE_DELIVERY',
-      'appointment': 'APPOINTMENT_DELIVERY',
-      'liftgate_pickup': 'LIFTGATE_PICK_UP',
-      'liftgate_delivery': 'LIFTGATE_DELIVERY',
-    };
-    return accessorials.filter(a => map[a]).map(a => map[a]);
+  // Turns the quote form's accessorials into FedEx rate-request pieces (each shape verified
+  // against the sandbox). Returns null when FedEx can't provide a selected option on this
+  // shipment — sending it anyway makes FedEx reject the whole request.
+  _mapAccessorialsToFedEx(accessorials, { usDomestic = false, shipDate, dgType, battery, homeDeliveryDate } = {}) {
+    const has = a => accessorials.includes(a);
+
+    // Liftgate and inside delivery are FedEx Freight® services; FedEx parcel services don't offer them.
+    if (['liftgate_pickup', 'liftgate_delivery', 'inside_delivery'].some(has)) return null;
+
+    const out = { shipmentTypes: [], residential: has('residential'), saturday: has('saturday') };
+    const packageTypes = [];
+    const packageSpecialServices = {};
+
+    // Saturday pickup: only on a Saturday ship date (FedEx rejects it on any other day).
+    if (has('saturday_pickup')) {
+      if (!shipDate || new Date(`${shipDate}T12:00:00`).getDay() !== 6) return null;
+      out.shipmentTypes.push('SATURDAY_PICKUP');
+    }
+
+    // Hold at a FedEx location: no extra charge; the location itself is picked when booking.
+    if (has('hold_at_location')) out.shipmentTypes.push('HOLD_AT_LOCATION');
+
+    // Signature is a package-level service and FedEx requires the type.
+    const signature = { signature_indirect: 'INDIRECT', signature_direct: 'DIRECT', signature_adult: 'ADULT', signature: 'DIRECT' };
+    const sigKey = Object.keys(signature).find(has);
+    if (sigKey) {
+      packageTypes.push('SIGNATURE_OPTION');
+      packageSpecialServices.signatureOptionType = signature[sigKey];
+    }
+
+    // Dangerous goods (package-level). The class/UN details are only needed when the shipment
+    // is created, not for a quote.
+    //   ACCESSIBLE / INACCESSIBLE — fully regulated DG (FedEx prices accessible DG higher)
+    //   SMALL_QUANTITY_EXCEPTION  — DG in small quantities
+    //   BATTERY                   — lithium batteries, IATA Section II (no DG surcharge)
+    if (has('hazmat')) {
+      packageTypes.push('DANGEROUS_GOODS');
+      if (dgType === 'BATTERY') {
+        packageSpecialServices.dangerousGoodsDetail = { options: ['BATTERY'] };
+        packageSpecialServices.batteryDetails = [{
+          batteryMaterialType: battery?.material === 'LITHIUM_METAL' ? 'LITHIUM_METAL' : 'LITHIUM_ION',
+          batteryPackingType: battery?.packing === 'PACKED_WITH_EQUIPMENT' ? 'PACKED_WITH_EQUIPMENT' : 'CONTAINED_IN_EQUIPMENT',
+          batteryRegulatoryType: 'IATA_SECTION_II',
+        }];
+      } else {
+        packageSpecialServices.dangerousGoodsDetail = {
+          accessibility: dgType === 'INACCESSIBLE' ? 'INACCESSIBLE' : 'ACCESSIBLE',
+          options: [dgType === 'SMALL_QUANTITY_EXCEPTION' ? 'SMALL_QUANTITY_EXCEPTION' : 'HAZARDOUS_MATERIALS'],
+        };
+      }
+    }
+
+    // FedEx Home Delivery® options (residential, US domestic only): appointment, evening, or a
+    // chosen delivery date. Only one can be sent.
+    const homeDelivery = has('appointment') ? 'APPOINTMENT'
+      : has('evening_delivery') ? 'EVENING'
+      : has('date_certain') ? 'DATE_CERTAIN' : null;
+    if (homeDelivery) {
+      if (!usDomestic) return null;
+      out.residential = true;
+      out.shipmentTypes.push('HOME_DELIVERY_PREMIUM');
+      out.homeDeliveryPremiumDetail = {
+        homedeliveryPremiumType: homeDelivery,
+        ...(homeDelivery === 'DATE_CERTAIN' && homeDeliveryDate && { deliveryDate: homeDeliveryDate }),
+      };
+    }
+
+    if (packageTypes.length) out.packageSpecialServices = { specialServiceTypes: packageTypes, ...packageSpecialServices };
+    return out;
   }
 
   async getTracking(trackingNumber) {
@@ -396,7 +540,7 @@ class FedExAdapter extends CarrierAdapter {
       shipDate: shipDate || null,
       latestStatus: trackResult.latestStatusDetail?.statusByLocale
         || trackResult.latestStatusDetail?.description || '',
-      service: trackResult.serviceDetail?.description || '',
+      service: fedexServiceName(trackResult.serviceDetail?.type, trackResult.serviceDetail?.description),
       weight: trackResult.packageDetails?.weightAndDimensions?.weight?.[0]
         ? `${trackResult.packageDetails.weightAndDimensions.weight[0].value} ${trackResult.packageDetails.weightAndDimensions.weight[0].unit || 'LB'}`
         : null,
@@ -449,18 +593,59 @@ class FedExAdapter extends CarrierAdapter {
 
   _buildShipRequest(details) {
     const accountNumber = carriers.fedex.accountNumber;
+    const packagingType = details.packagingType || 'YOUR_PACKAGING';
+    const shipDate = details.shipDatestamp || new Date().toISOString().split('T')[0];
+    const usDomestic = details.shipper?.address?.countryCode === 'US' && details.recipient?.address?.countryCode === 'US';
+
+    // The same options the customer was quoted for (see _mapAccessorialsToFedEx).
+    const special = this._mapAccessorialsToFedEx(details.accessorials || [], {
+      usDomestic, shipDate,
+      dgType: details.options?.dgType,
+      battery: details.options?.battery,
+      homeDeliveryDate: details.options?.homeDeliveryDate,
+    });
+    if (!special) throw new Error('FedEx cannot provide the selected options on this shipment');
+
+    const recipient = special.residential
+      ? { ...details.recipient, address: { ...details.recipient.address, residential: true } }
+      : details.recipient;
+
+    const shipmentTypes = [...special.shipmentTypes];
+    // Rating finds Saturday delivery from the ship date; shipping must ask for it explicitly.
+    if (special.saturday) shipmentTypes.push('SATURDAY_DELIVERY');
+    if (details.options?.fedexOneRate && packagingType !== 'YOUR_PACKAGING' && usDomestic) shipmentTypes.push('FEDEX_ONE_RATE');
+    const shipmentSpecialServices = shipmentTypes.length ? { specialServiceTypes: shipmentTypes } : null;
+
+    if (shipmentTypes.includes('HOLD_AT_LOCATION')) {
+      const hal = details.holdAtLocation;
+      if (!hal?.locationId) throw new Error('A FedEx hold location is required for Hold at Location');
+      shipmentSpecialServices.holdAtLocationDetail = {
+        locationId: hal.locationId,
+        locationType: hal.locationType,
+        locationContactAndAddress: { address: hal.address },
+      };
+    }
+    if (special.homeDeliveryPremiumDetail) {
+      const type = special.homeDeliveryPremiumDetail.homedeliveryPremiumType;
+      // FedEx calls the recipient to arrange appointment / date certain deliveries.
+      const phone = (details.recipient?.contact?.phoneNumber || '').replace(/\D/g, '').slice(-10);
+      shipmentSpecialServices.homeDeliveryPremiumDetail = {
+        ...special.homeDeliveryPremiumDetail,
+        ...(type !== 'EVENING' && phone.length === 10 && { phoneNumber: { areaCode: phone.slice(0, 3), localNumber: phone.slice(3) } }),
+      };
+    }
 
     const body = {
       labelResponseOptions: 'LABEL',
       accountNumber: { value: accountNumber },
       requestedShipment: {
-        shipDatestamp: details.shipDatestamp || new Date().toISOString().split('T')[0],
+        shipDatestamp: shipDate,
         serviceType: details.serviceType,
-        packagingType: details.packagingType || 'YOUR_PACKAGING',
+        packagingType,
         pickupType: 'USE_SCHEDULED_PICKUP',
         shipper: details.shipper,
         // Ship API uses "recipients" (plural array), unlike Rate API's singular "recipient"
-        recipients: [details.recipient],
+        recipients: [recipient],
         shippingChargesPayment: this._buildShipPayment(details.shippingChargesPayment, accountNumber),
         labelSpecification: {
           imageType: details.labelSpecification?.imageType || 'PDF',
@@ -468,7 +653,10 @@ class FedExAdapter extends CarrierAdapter {
         },
         requestedPackageLineItems: [{
           weight: details.weight,
-          ...(details.dimensions && details.dimensions.length && {
+          ...(special.packageSpecialServices && { packageSpecialServices: special.packageSpecialServices }),
+          ...(details.declaredValue?.amount > 0 && { declaredValue: details.declaredValue }),
+          // FedEx-branded packaging has fixed dimensions.
+          ...(packagingType === 'YOUR_PACKAGING' && details.dimensions && details.dimensions.length && {
             dimensions: {
               length: details.dimensions.length,
               width: details.dimensions.width,
@@ -486,7 +674,8 @@ class FedExAdapter extends CarrierAdapter {
       },
     };
 
-    // Special services (Saturday delivery, signature option, etc.)
+    if (shipmentSpecialServices) body.requestedShipment.shipmentSpecialServices = shipmentSpecialServices;
+    // Explicit special services passed by test scripts override the mapped ones.
     if (details.specialServices) {
       body.requestedShipment.shipmentSpecialServices = details.specialServices;
     }

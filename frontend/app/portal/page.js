@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { fetchAPI } from '@/lib/api';
 import s from './page.module.css';
+import { FEDEX_DISCLAIMER, FEDEX_DISCLAIMER_STYLE } from '@/lib/fedexCompliance';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({ shipmentsThisMonth: 12, totalSpent: 4218, inTransit: 3, saved: 681 });
@@ -217,7 +218,7 @@ export default function DashboardPage() {
                 const route = q.route || `${q.originCity || ''} → ${q.destCity || ''}`;
                 const carrier = q.carrier || bestRate?.carrierName || '—';
                 const service = q.service || bestRate?.serviceName || '—';
-                const rate = q.rate || (bestRate ? `C$${bestRate.displayRate.toFixed(2)}` : '—');
+                const rate = q.rate || (bestRate ? `${bestRate.currency === 'USD' ? 'US$' : 'C$'}${bestRate.displayRate.toFixed(2)}` : '—');
                 const delivery = q.delivery || (bestRate?.estimatedDelivery ? new Date(bestRate.estimatedDelivery).toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric' }) : '—');
                 const quotedAt = q.quotedAt || (q.createdAt ? formatQuoteTime(q.createdAt) : '—');
 
@@ -333,6 +334,8 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+      {/* Required on every screen showing FedEx marks or service names (FedEx Integrator validation). */}
+      <p style={{ ...FEDEX_DISCLAIMER_STYLE, marginTop: 16 }}>{FEDEX_DISCLAIMER}</p>
     </>
   );
 }

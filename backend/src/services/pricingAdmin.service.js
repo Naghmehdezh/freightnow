@@ -1,4 +1,5 @@
 const Quote = require('../models/Quote');
+const { labelFor } = require('../carriers/accessorials');
 const QuoteRate = require('../models/QuoteRate');
 const Booking = require('../models/Booking');
 const Invoice = require('../models/Invoice');
@@ -69,6 +70,9 @@ async function listQuotesForAdmin({ from, to, carrierId, adjustedOnly, search, p
       serviceName: r.serviceName,
       cost: r.baseRate,
       costCad: r.costCad,
+      // The carrier's charge for each selected option (included in cost; passed through at cost).
+      accessorialCharges: (r.accessorialCharges || []).map(c => ({ label: c.label, code: c.code, amount: c.amount })),
+      notIncluded: r.notIncludedOptions?.length ? { labels: r.notIncludedOptions.map(o => labelFor(o)), message: r.notIncludedMessage } : null,
       currency: r.currency || 'CAD',
       enginePrice: r.engineRate ?? r.displayRate,
       finalPrice: r.displayRate,
@@ -255,6 +259,7 @@ async function calibrationReport({ months = 12, minN = 30, cap = 10 } = {}) {
   const rates = await QuoteRate.find({
     quote: { $in: quotes.map(q => q._id) },
     costCad: { $gt: 0 },
+    carrierId: { $ne: 'iff' }, // spot rates are priced by hand, not by the engine bands
     $or: [{ adjustmentReason: null }, { adjustmentReason: { $nin: ['contract', 'oneoff'] } }],
   }).select('quote costCad baseRate displayRate adjustedAt');
 

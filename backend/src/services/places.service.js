@@ -76,6 +76,7 @@ function parseComponents(components = []) {
   const street = [get('street_number'), get('route')].filter(Boolean).join(' ');
   return {
     street,
+    unit: get('subpremise'), // e.g. "1115" in "17 Anndale Dr #1115"
     city: get('locality') || get('postal_town') || get('sublocality') || get('administrative_area_level_3') || get('administrative_area_level_2'),
     province: get('administrative_area_level_1', true),
     postalCode: [get('postal_code'), get('postal_code_suffix')].filter(Boolean).join('-'),

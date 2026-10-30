@@ -217,7 +217,15 @@ function Quotes() {
                   <div>{r.carrierName}</div>
                   <div className={s.small}>{r.serviceName}</div>
                 </td>
-                <td className={s.num}>{money(r.cost)} <span className={s.small}>{r.currency}</span></td>
+                <td className={s.num}>
+                  {money(r.cost)} <span className={s.small}>{r.currency}</span>
+                  {r.accessorialCharges?.length > 0 && (
+                    <div className={s.small} title="Accessorial charges from the carrier — included in the cost and passed through without markup">
+                      incl. {r.accessorialCharges.map(c => `${c.label} ${money(c.amount)}`).join(' · ')}
+                    </div>
+                  )}
+                  {r.notIncluded && <div className={`${s.small} ${s.negative}`} title={r.notIncluded.message}>not included: {r.notIncluded.labels.join(', ')}</div>}
+                </td>
                 <td className={s.num}>{money(r.enginePrice)}</td>
                 <td className={`${s.num} ${r.adjustment ? s.adjusted : ''}`}>
                   {money(r.finalPrice)}

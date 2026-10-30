@@ -1,42 +1,69 @@
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { fetchAPI } from '@/lib/api';
 import { CARRIERS } from '@/lib/carriers';
 import { FEDEX_DISCLAIMER, FEDEX_DISCLAIMER_STYLE } from '@/lib/fedexCompliance';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
-import { estimateFreightClass, FREIGHT_CLASSES } from '@/lib/freightClass';
+import LtlGroups, { emptyLtlGroup, ltlGroupClass, ltlGroupComplete, ltlTotals } from '@/components/LtlGroups';
 
 const DHL_DISCLAIMER = 'DHL and the DHL logo are trademarks of Deutsche Post AG and are used by permission.';
 import CarrierLogo from '@/components/CarrierLogo';
 import BookingModal from '@/components/BookingModal';
+import PickupWindow from '@/components/PickupWindow';
+import PackageGroups, { emptyGroup, groupTotals } from '@/components/PackageGroups';
+import { COUNTRIES, COUNTRY_CODES } from '@/lib/countries';
 import s from './page.module.css';
 
 const SPOT_TYPES = ['ftl', 'air', 'ocean'];
+// LTL options. Each carrier prices these through its own API codes; carriers that don't offer
+// a selected option are shown as "not available" in the results.
 const ACCESSORIALS = [
   { value: 'liftgate_pickup', label: 'Liftgate pickup' },
   { value: 'liftgate_delivery', label: 'Liftgate delivery' },
-  { value: 'residential', label: 'Residential' },
-  { value: 'appointment', label: 'Appointment' },
+  { value: 'residential_pickup', label: 'Residential pickup' },
+  { value: 'residential', label: 'Residential delivery' },
+  { value: 'inside_pickup', label: 'Inside pickup' },
   { value: 'inside_delivery', label: 'Inside delivery' },
-  { value: 'hazmat', label: 'Hazmat' },
-  { value: 'signature', label: 'Signature req.' },
+  { value: 'limited_access_pickup', label: 'Limited access pickup' },
+  { value: 'limited_access_delivery', label: 'Limited access delivery' },
+  { value: 'appointment_pickup', label: 'Pickup appointment' },
+  { value: 'appointment', label: 'Delivery appointment' },
+  { value: 'call_before_delivery', label: 'Call before delivery' },
   { value: 'saturday', label: 'Saturday delivery' },
+  { value: 'hazmat', label: 'Hazmat' },
+  { value: 'do_not_stack', label: 'Do not stack' },
+  { value: 'oversize', label: 'Oversize / excess length', hint: 'Enter the real length in the dimensions' },
+  { value: 'in_bond', label: 'In-bond (customs)' },
+];
+// Limited access is priced by type of site by some carriers (Estes).
+const LIMITED_ACCESS_SITES = [
+  { value: 'school', label: 'School' },
+  { value: 'secured', label: 'Prison / secured site' },
+  { value: 'farm', label: 'Farm / ranch' },
+  { value: 'mini_storage', label: 'Mini-storage' },
+  { value: 'worship', label: 'Place of worship' },
+  { value: 'seaport', label: 'Seaport' },
+  { value: 'fair', label: 'Fair / exhibition' },
+  { value: 'construction', label: 'Construction site' },
 ];
 // Envelopes and parcels: no liftgate/inside delivery (freight-only services); signature and
 // dangerous goods need a type, chosen below the options.
 const PARCEL_ACCESSORIALS = [
-  { value: 'residential', label: 'Residential' },
+  { value: 'pickup', label: 'Pickup', hint: 'A courier collects it from the pickup address. Without it, drop it off or give it to your regular pickup.' },
+  { value: 'residential', label: 'Residential Delivery' },
   { value: 'saturday', label: 'Saturday delivery' },
   { value: 'saturday_pickup', label: 'Saturday pickup', hint: 'Pickup date must be a Saturday' },
-  { value: 'signature', label: 'Signature' },
+  { value: 'signature', label: 'FedEx® Delivery Signature Options' },
   { value: 'hold_at_location', label: 'Hold at location', hint: 'Recipient collects at a carrier location' },
-  { value: 'home_delivery', label: 'Home delivery option', hint: 'US residential only' },
+  { value: 'home_delivery', label: 'Home Delivery Options', hint: 'US residential only' },
   { value: 'hazmat', label: 'Dangerous goods' },
 ];
+// Names as required by FedEx Integrator validation.
 const HOME_DELIVERY_TYPES = [
-  { value: 'appointment', label: 'Appointment' },
-  { value: 'evening_delivery', label: 'Evening delivery' },
-  { value: 'date_certain', label: 'On a chosen date' },
+  { value: 'date_certain', label: 'FedEx Date Certain Home Delivery®' },
+  { value: 'evening_delivery', label: 'FedEx Evening Home Delivery®' },
+  { value: 'appointment', label: 'FedEx Appointment Home Delivery®' },
 ];
 const DG_TYPES = [
   { value: 'ACCESSIBLE', label: 'Fully regulated, accessible (most DG classes)' },
@@ -51,14 +78,18 @@ function nextSaturday(dateStr) {
   d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
   return d.toISOString().split('T')[0];
 }
+// Envelopes: same options, except dangerous goods (not allowed in envelope services).
+const ENVELOPE_ACCESSORIALS = PARCEL_ACCESSORIALS.filter(o => o.value !== 'hazmat');
+// Names as required by FedEx Integrator validation.
 const SIGNATURE_TYPES = [
-  { value: 'signature_indirect', label: 'Indirect: anyone at the address, or a neighbour' },
-  { value: 'signature_direct', label: 'Direct: someone at the delivery address' },
-  { value: 'signature_adult', label: 'Adult: recipient of legal age, with ID' },
+  { value: 'signature_none', label: 'No Signature Required' },
+  { value: 'signature_indirect', label: 'Indirect Signature Required' },
+  { value: 'signature_direct', label: 'Direct Signature Required' },
+  { value: 'signature_adult', label: 'Adult Signature Required' },
 ];
 
 const SPOT_LABELS = {
-  ftl: { title: 'FTL Freight — Spot rate request', desc: 'Full truckload shipments require custom pricing. Fill in your cargo details and our team will respond within 2–4 business hours with a competitive rate.' },
+  ftl: { title: 'FTL / PTL — Spot rate request', desc: 'Full and partial truckload shipments require custom pricing. Fill in your cargo details and our team will respond within 2–4 business hours with a competitive rate.' },
   air: { title: 'Air Freight — Spot rate request', desc: 'Import and export air freight pricing is based on routes, weight, and current capacity. Our team will respond with a competitive quote within 2–4 business hours.' },
   ocean: { title: 'Ocean Freight — Spot rate request', desc: 'LCL and FCL ocean freight pricing varies by route and market conditions. Fill in your shipment details and we\'ll send you a competitive quote within 2–4 business hours.' },
 };
@@ -122,51 +153,51 @@ export default function QuotePage() {
   const [currentType, setCurrentType] = useState('envelope');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
-  const [spotSuccess, setSpotSuccess] = useState(false);
+  const [spotResult, setSpotResult] = useState(null); // { requestNumber } once IFF has it
+  const [spotError, setSpotError] = useState('');
+  const [spotSubmitting, setSpotSubmitting] = useState(false);
   const [booking, setBooking] = useState({}); // { [quoteRateId]: 'loading' | 'booked' | 'error' }
   const [confirmRate, setConfirmRate] = useState(null); // rate awaiting the user's booking confirmation
   const [labels, setLabels] = useState({}); // { [quoteRateId]: { encodedLabel, docType, trackingNumber } }
+  const [pickups, setPickups] = useState({}); // { [quoteRateId]: { scheduled, confirmationNumber, message } }
   const [originValidation, setOriginValidation] = useState(null);
   const [destValidation, setDestValidation] = useState(null);
   const [validating, setValidating] = useState(false);
 
   // Origin/Destination
+  // Street + unit from the address search — not used for pricing, but pre-fills the booking form.
+  const [origStreet, setOrigStreet] = useState({ street: '', unit: '' });
+  const [destStreet, setDestStreet] = useState({ street: '', unit: '' });
   const [origCity, setOrigCity] = useState('');
   const [origProvince, setOrigProvince] = useState('');
   const [origPostal, setOrigPostal] = useState('');
-  const [origCountry, setOrigCountry] = useState('CA');
+  const [origCountry, setOrigCountry] = useState('');
   const [destCity, setDestCity] = useState('');
   const [destProvince, setDestProvince] = useState('');
   const [destPostal, setDestPostal] = useState('');
-  const [destCountry, setDestCountry] = useState('US');
+  const [destCountry, setDestCountry] = useState('');
 
   // Envelope fields
   const [weightEnv, setWeightEnv] = useState('');
-  const [piecesEnv, setPiecesEnv] = useState('1');
-  const [pickupEnv, setPickupEnv] = useState(today);
-  const [currencyEnv, setCurrencyEnv] = useState('CAD');
+  const [piecesEnv, setPiecesEnv] = useState('');
+  const [pickupEnv, setPickupEnv] = useState('');
 
   // Parcel fields
   const [weightParcel, setWeightParcel] = useState('');
-  const [piecesParcel, setPiecesParcel] = useState('1');
-  const [pickupParcel, setPickupParcel] = useState(today);
-  const [currencyParcel, setCurrencyParcel] = useState('CAD');
+  const [piecesParcel, setPiecesParcel] = useState('');
+  const [pickupParcel, setPickupParcel] = useState('');
   const [dimLParcel, setDimLParcel] = useState('');
   const [dimWParcel, setDimWParcel] = useState('');
   const [dimHParcel, setDimHParcel] = useState('');
 
   // LTL fields
-  const [weightLtl, setWeightLtl] = useState('');
-  const [piecesLtl, setPiecesLtl] = useState('1');
-  const [pickupLtl, setPickupLtl] = useState(today);
-  const [currencyLtl, setCurrencyLtl] = useState('CAD');
-  const [dimLLtl, setDimLLtl] = useState('');
-  const [dimWLtl, setDimWLtl] = useState('');
-  const [dimHLtl, setDimHLtl] = useState('');
-  const [freightClass, setFreightClass] = useState('');
-  const [freightClassAuto, setFreightClassAuto] = useState(true);
-  const [fedexPackaging, setFedexPackaging] = useState('YOUR_PACKAGING'); // FedEx-only: branded packaging
-  const [fedexOneRate, setFedexOneRate] = useState(false); // calculate from weight + dimensions unless the user picks one
+  // LTL pieces: groups of identical pieces (dimensions, weight per piece, freight class).
+  const [ltlGroups, setLtlGroups] = useState([emptyLtlGroup()]);
+  const [pickupLtl, setPickupLtl] = useState('');
+
+  // Pickup window on the pickup date ("HH:MM"), shared by envelope, parcel and LTL.
+  const [pickupReady, setPickupReady] = useState('');
+  const [pickupClose, setPickupClose] = useState('');
 
   // Shared fields
   const [declaredValue, setDeclaredValue] = useState('');
@@ -178,23 +209,28 @@ export default function QuotePage() {
   const [batteryPacking, setBatteryPacking] = useState('CONTAINED_IN_EQUIPMENT');
   const [homeDeliveryType, setHomeDeliveryType] = useState('appointment');
   const [homeDeliveryDate, setHomeDeliveryDate] = useState('');
+  const [limitedAccessType, setLimitedAccessType] = useState('');
 
   // Spot fields
-  const [spotWeight, setSpotWeight] = useState('');
-  const [spotPieces, setSpotPieces] = useState('');
-  const [spotDims, setSpotDims] = useState('');
-  const [spotDate, setSpotDate] = useState(today);
-  const [spotOrigPort, setSpotOrigPort] = useState('');
-  const [spotDestPort, setSpotDestPort] = useState('');
-  const [oceanType, setOceanType] = useState('LCL — Less than container load');
+  const [spotWeight, setSpotWeight] = useState(''); // FTL: lb; air / ocean LCL: kg
+  const [spotSkids, setSpotSkids] = useState(''); // FTL / PTL
+  const [airService, setAirService] = useState(''); // 'pickup' | 'dropoff'
+  const [oceanType, setOceanType] = useState('');
+  const [spotGroups, setSpotGroups] = useState([emptyGroup()]); // air / ocean LCL pieces + dimensions
   const [spotCommodity, setSpotCommodity] = useState('');
-  const [spotValue, setSpotValue] = useState('');
   const [spotNotes, setSpotNotes] = useState('');
 
   const isSpot = SPOT_TYPES.includes(currentType);
+  // Spot shipments only need a city + country, except an air pickup (full pickup address).
+  const isLcl = currentType === 'ocean' && oceanType.startsWith('LCL');
+  const isFcl = currentType === 'ocean' && oceanType.startsWith('FCL');
+  const origMode = currentType === 'air' ? (airService === 'pickup' ? 'full' : 'cityCountry') : currentType === 'ocean' ? 'cityCountry' : 'full';
+  const destMode = currentType === 'air' || currentType === 'ocean' ? 'cityCountry' : 'full';
   const isParcelType = currentType === 'parcel' || currentType === 'envelope';
-  const accessorialOptions = isParcelType ? PARCEL_ACCESSORIALS : ACCESSORIALS;
+  const accessorialOptions = currentType === 'envelope' ? ENVELOPE_ACCESSORIALS : isParcelType ? PARCEL_ACCESSORIALS : ACCESSORIALS;
   const selectedAccessorials = activeAccessorials.filter(a => accessorialOptions.some(o => o.value === a));
+  // A pickup is part of every LTL shipment; parcels and envelopes need the Pickup option.
+  const wantsPickup = currentType === 'ltl' || selectedAccessorials.includes('pickup');
 
   // What the API receives: only options valid for this shipment type, with the signature type.
   function accessorialsForRequest() {
@@ -215,16 +251,22 @@ export default function QuotePage() {
     }
   }
 
-  // LTL freight class from density — uses the same default pallet size the request falls back to.
-  const autoFreightClass = estimateFreightClass({
-    weight: weightLtl, pieces: piecesLtl,
-    length: dimLLtl || 48, width: dimWLtl || 40, height: dimHLtl || 48,
+  // LTL line items for the rate request: one per complete group, weight per piece.
+  const ltlLineItems = ltlGroups.filter(ltlGroupComplete).map(g => {
+    const cls = ltlGroupClass(g);
+    return {
+      pieces: parseInt(g.pieces), length: parseFloat(g.length), width: parseFloat(g.width), height: parseFloat(g.height),
+      weight: parseFloat(g.weight),
+      ...(cls?.manual && { freightClass: cls.freightClass }), // auto classes are calculated by the server
+    };
   });
 
   function getFields() {
-    if (currentType === 'envelope') return { weight: parseFloat(weightEnv) || 0, pieces: parseInt(piecesEnv) || 1, pickupDate: pickupEnv, currency: currencyEnv, dimL: 12, dimW: 9, dimH: 1, freightClass: '50' };
-    if (currentType === 'parcel') return { weight: parseFloat(weightParcel) || 0, pieces: parseInt(piecesParcel) || 1, pickupDate: pickupParcel, currency: currencyParcel, dimL: dimLParcel || 12, dimW: dimWParcel || 12, dimH: dimHParcel || 12, freightClass: '70' };
-    return { weight: parseFloat(weightLtl) || 0, pieces: parseInt(piecesLtl) || 1, pickupDate: pickupLtl, currency: currencyLtl, dimL: dimLLtl || 48, dimW: dimWLtl || 40, dimH: dimHLtl || 48, freightClass: freightClassAuto ? (autoFreightClass?.freightClass || '') : freightClass };
+    if (currentType === 'envelope') return { weight: parseFloat(weightEnv) || 0, pieces: parseInt(piecesEnv) || 1, pickupDate: pickupEnv, dimL: 12, dimW: 9, dimH: 1, freightClass: '50' };
+    if (currentType === 'parcel') return { weight: parseFloat(weightParcel) || 0, pieces: parseInt(piecesParcel) || 1, pickupDate: pickupParcel, dimL: dimLParcel || 12, dimW: dimWParcel || 12, dimH: dimHParcel || 12, freightClass: '70' };
+    const totals = ltlTotals(ltlGroups);
+    const first = ltlLineItems[0];
+    return { weight: totals.weight, pieces: totals.pieces || 1, pickupDate: pickupLtl, dimL: first?.length, dimW: first?.width, dimH: first?.height, freightClass: (first && ltlGroupClass(ltlGroups.find(ltlGroupComplete))?.freightClass) || '' };
   }
 
   async function getQuotes() {
@@ -232,10 +274,14 @@ export default function QuotePage() {
     const dest = destPostal.replace(/\s/g, '') || destCity.trim();
     if (!origCity && !origPostal) { alert('Please enter an origin.'); return; }
     if (!destCity && !destPostal) { alert('Please enter a destination.'); return; }
+    if (!origCountry || !destCountry) { alert('Please select the origin and destination country.'); return; }
 
-    const { weight, pieces, pickupDate, currency, dimL, dimW, dimH, freightClass: fc } = getFields();
+    const { weight, pieces, pickupDate, dimL, dimW, dimH, freightClass: fc } = getFields();
     if (!weight) { alert('Please enter the weight.'); return; }
-    if (currentType === 'ltl' && !fc) { alert('Please select a freight class.'); return; }
+    if (wantsPickup && (!pickupDate || !pickupReady || !pickupClose)) { alert('Please choose the pickup date, ready time and close time.'); return; }
+    if (currentType === 'ltl' && (!ltlLineItems.length || ltlGroups.some(g => !ltlGroupComplete(g) && (g.pieces || g.length || g.width || g.height || g.weight)))) {
+      alert('Please enter pieces, length, width, height and weight per piece for every group.'); return;
+    }
 
     setLoading(true);
     setResults(null);
@@ -283,6 +329,7 @@ export default function QuotePage() {
 
     let quoteResults;
     let quotedRequest = null; // what was quoted — the booking step needs it
+    let unavailableCarriers = []; // carriers that can't provide a selected option
     try {
       const body = {
         shipmentType: currentType,
@@ -301,26 +348,38 @@ export default function QuotePage() {
         weight,
         pieces,
         ...(dimL && dimW && dimH && { dimensions: { length: parseInt(dimL), width: parseInt(dimW), height: parseInt(dimH) } }),
+        ...(currentType === 'ltl' && { lineItems: ltlLineItems }),
         freightClass: fc || undefined, // backend calculates it from density when missing
-        currency,
+        // Currency of the declared value only; rates come back in each carrier's own currency.
+        currency: origCountry === 'US' ? 'USD' : 'CAD',
         ...(pickupDate && { pickupDate }),
+        ...(wantsPickup && pickupDate && pickupReady && pickupClose && { pickupReadyTime: pickupReady, pickupCloseTime: pickupClose }),
         ...(declaredValue && { declaredValue: parseFloat(declaredValue) }),
         ...(selectedAccessorials.length && { accessorials: accessorialsForRequest() }),
         ...(parcelHas('hazmat') && { dgType }),
         ...(parcelHas('hazmat') && dgType === 'BATTERY' && { battery: { material: batteryMaterial, packing: batteryPacking } }),
         ...(parcelHas('home_delivery') && homeDeliveryType === 'date_certain' && homeDeliveryDate && { homeDeliveryDate }),
-        ...(currentType === 'parcel' && fedexPackaging !== 'YOUR_PACKAGING' && { fedexPackaging, fedexOneRate }),
+        ...(currentType === 'ltl' && selectedAccessorials.some(a => a.startsWith('limited_access')) && limitedAccessType && { limitedAccessType }),
       };
-      quotedRequest = { shipmentType: currentType, accessorials: body.accessorials || [], dgType: body.dgType, origin: body.origin, destination: body.destination };
+      quotedRequest = {
+        shipmentType: currentType, accessorials: body.accessorials || [], dgType: body.dgType,
+        origin: { ...body.origin, street: origStreet.street, unit: origStreet.unit },
+        destination: { ...body.destination, street: destStreet.street, unit: destStreet.unit },
+      };
       const data = await fetchAPI('/api/rate/all', { method: 'POST', body: JSON.stringify(body) });
       // A successful response — even with zero rates — is the real, honest answer (no carrier
       // has a live rate for this route/shipment right now). Only a thrown error (network issue,
       // backend unreachable) should fall through to client-side simulation below; an empty
       // `rates: []` must NOT be treated the same as a failed request, or every genuinely-empty
       // result gets silently replaced with fabricated data.
+      unavailableCarriers = (data.unavailable || []).map(u => ({
+        carrier: CARRIERS.find(c => c.id === u.carrierId) || { id: u.carrierId, name: u.carrierName },
+        message: u.message,
+      }));
       quoteResults = (data.rates || []).map(r => ({
         carrier: CARRIERS.find(c => c.id === r.carrierId) || CARRIERS[0],
         displayRate: r.displayRate,
+        notIncluded: r.notIncluded || null, // selected options this carrier couldn't include
         currency: r.currency || 'CAD', // each rate is in its carrier's own currency
         transitDays: r.transitDays,
         deliveryDate: r.deliveryDate || calcDelivery(r.transitDays, pickupDate),
@@ -345,24 +404,25 @@ export default function QuotePage() {
       });
       quoteResults = eligible.map(c => {
         const sim = simulateRate(c, currentType, weight, fc, orig, dest, selectedAccessorials, pickupDate);
-        return { carrier: c, ...sim, currency: getFields().currency, displayRate: Math.round(applyMarkup(sim.rate) * 100) / 100 };
+        return { carrier: c, ...sim, currency: origCountry === 'US' ? 'USD' : 'CAD', displayRate: Math.round(applyMarkup(sim.rate) * 100) / 100 };
       });
       quoteResults.sort((a, b) => a.displayRate - b.displayRate);
     }
     // Live results keep the server's order: it ranks across CAD and USD rates on a common
     // basis, which a raw price sort here can't do.
-    setResults({ request: quotedRequest, quotes: quoteResults, summary: { count: quoteResults.length, orig: origCity || origPostal, dest: destCity || destPostal, type: { envelope: 'Envelope', parcel: 'Parcel', ltl: 'LTL Freight' }[currentType], weight, currency: getFields().currency } });
+    setResults({ request: quotedRequest, quotes: quoteResults, unavailable: unavailableCarriers, summary: { count: quoteResults.length, orig: origCity || origPostal, dest: destCity || destPostal, type: { envelope: 'Envelope', parcel: 'Parcel', ltl: 'LTL Freight' }[currentType], weight } });
     setLoading(false);
   }
 
-  const FORM_COUNTRIES = ['CA', 'US', 'CN', 'GB', 'DE'];
   function applyAddress(side, a) {
-    const country = FORM_COUNTRIES.includes(a.country) ? a.country : 'other';
+    const country = COUNTRY_CODES.has(a.country) ? a.country : '';
     if (side === 'origin') {
       setOrigCity(a.city || ''); setOrigProvince(a.province || ''); setOrigPostal(a.postalCode || ''); setOrigCountry(country);
+      setOrigStreet({ street: a.street || '', unit: a.unit || '' });
       setOriginValidation(null);
     } else {
       setDestCity(a.city || ''); setDestProvince(a.province || ''); setDestPostal(a.postalCode || ''); setDestCountry(country);
+      setDestStreet({ street: a.street || '', unit: a.unit || '' });
       setDestValidation(null);
     }
   }
@@ -390,6 +450,15 @@ export default function QuotePage() {
         ? `Booked & paid! Booking ${data.booking.bookingNumber} — tracking: ${tracking}`
         : `Booked! Booking ${data.booking.bookingNumber} — tracking: ${tracking}. Invoice will be sent.`;
       if (data.manualCarrierBooking?.reason) msg += `\n\n${data.manualCarrierBooking.reason}`;
+      if (!data.pickup && isParcelType && !selectedAccessorials.includes('pickup')) {
+        msg += `\n\nNo pickup requested: drop it off at a ${r.carrier.name} location or give it to your regular ${r.carrier.name} pickup.`;
+      }
+      if (data.pickup) {
+        setPickups(prev => ({ ...prev, [r.quoteRateId]: data.pickup }));
+        msg += data.pickup.scheduled
+          ? `\n\nPickup booked with the carrier (confirmation ${data.pickup.confirmationNumber}).`
+          : `\n\nPickup not scheduled yet: ${data.pickup.message}`;
+      }
       alert(msg);
     } catch (err) {
       setBooking(prev => ({ ...prev, [r.quoteRateId]: 'error' }));
@@ -399,33 +468,60 @@ export default function QuotePage() {
   }
 
   async function submitSpotRate() {
-    const orig = origCity || origPostal;
-    const dest = destCity || destPostal;
-    if (!orig || !dest) { alert('Please enter an origin and destination.'); return; }
+    setSpotError('');
+    setSpotResult(null);
+    const weight = parseFloat(spotWeight);
+    const fail = msg => { setSpotError(msg); };
+    if (currentType === 'air' && !airService) return fail('Please choose whether pick up is required.');
+    if (currentType === 'ocean' && !oceanType) return fail('Please choose the ocean service type.');
+    if (!origCity.trim() && !origPostal.trim()) return fail('Please enter the origin city.');
+    if (!destCity.trim() && !destPostal.trim()) return fail('Please enter the destination city.');
+    if (!origCountry || !destCountry) return fail('Please select the origin and destination country.');
+    if (origMode === 'full' && currentType === 'air' && (!origStreet.street || !origPostal.trim())) {
+      return fail('For a pickup, search the full pickup address (street and postal code).');
+    }
+    const needsPieces = currentType === 'air' || isLcl;
+    if ((currentType === 'ftl' || needsPieces) && !(weight > 0)) return fail('Please enter the total weight.');
+    if (currentType === 'ftl' && !(parseInt(spotSkids) > 0)) return fail('Please enter the number of skids.');
+    const packages = spotGroups
+      .map(g => ({ pieces: parseInt(g.pieces), length: parseFloat(g.length), width: parseFloat(g.width), height: parseFloat(g.height), unit: g.unit }))
+      .filter(g => g.pieces > 0 && g.length > 0 && g.width > 0 && g.height > 0);
+    if (needsPieces && !packages.length) return fail('Please enter the pieces and dimensions (L × W × H).');
 
+    // Full address only where it's needed (air pickup / FTL); otherwise city + country.
+    const place = (mode, street, city, province, postal, country) => (mode === 'full'
+      ? {
+        ...(street && { street }),
+        ...(city.trim() && { city: city.trim() }),
+        ...(province.trim() && { province: province.trim() }),
+        ...(postal.trim() && { postalCode: postal.trim().replace(/\s/g, '') }),
+        country,
+      }
+      : { city: city.trim(), country });
+    const unitSuffix = origStreet.unit ? ` #${origStreet.unit}` : '';
+    setSpotSubmitting(true);
     try {
-      await fetchAPI('/api/spot-rates', {
+      const data = await fetchAPI('/api/spot-rates', {
         method: 'POST',
         body: JSON.stringify({
           shipmentType: currentType,
-          origCity, origPostal, origCountry,
-          destCity, destPostal, destCountry,
-          weight: parseFloat(spotWeight) || 0,
-          pieces: parseInt(spotPieces) || 1,
-          dimensions: spotDims,
-          pickupDate: spotDate,
-          ...(spotOrigPort && { originPort: spotOrigPort }),
-          ...(spotDestPort && { destinationPort: spotDestPort }),
-          ...(currentType === 'ocean' && { oceanServiceType: oceanType }),
-          commodity: spotCommodity,
-          ...(spotValue && { declaredValue: parseFloat(spotValue) }),
-          notes: spotNotes,
+          ...(currentType === 'air' && { airService }),
+          ...(currentType === 'ocean' && { oceanType }),
+          origin: place(origMode, origStreet.street ? origStreet.street + unitSuffix : '', origCity, origProvince, origPostal, origCountry),
+          destination: place(destMode, destStreet.street, destCity, destProvince, destPostal, destCountry),
+          ...((currentType === 'ftl' || needsPieces) && { weight, weightUnit: currentType === 'ftl' ? 'lb' : 'kg' }),
+          ...(needsPieces && { packages }),
+          ...(currentType === 'ftl' && { skids: parseInt(spotSkids) }),
+          ...(spotCommodity.trim() && { commodity: spotCommodity.trim() }),
+          ...(spotNotes.trim() && { specialNotes: spotNotes.trim() }),
         }),
       });
-    } catch {
-      // Show success anyway for demo
+      setSpotResult({ requestNumber: data.spotRate?.requestNumber });
+    } catch (err) {
+      setSpotError(err.error?.message || err.message || 'Your request could not be sent. Please try again, or call us at 416 798 4151.');
+    } finally {
+      setSpotSubmitting(false);
     }
-    setSpotSuccess(true);
   }
 
   function downloadLabel(quoteRateId) {
@@ -445,9 +541,25 @@ export default function QuotePage() {
   }
 
   function handleTypeChange(type) {
+    if (type === currentType) return;
     setCurrentType(type);
+    // Start the new shipment type with empty addresses (each type asks for different address details).
+    setOrigCity(''); setOrigProvince(''); setOrigPostal(''); setOrigCountry(''); setOrigStreet({ street: '', unit: '' });
+    setDestCity(''); setDestProvince(''); setDestPostal(''); setDestCountry(''); setDestStreet({ street: '', unit: '' });
+    // ...and empty shipment details: weights, sizes, pickup date/window, options, spot fields.
+    setWeightEnv(''); setPiecesEnv(''); setPickupEnv('');
+    setWeightParcel(''); setPiecesParcel(''); setPickupParcel(''); setDimLParcel(''); setDimWParcel(''); setDimHParcel('');
+    setLtlGroups([emptyLtlGroup()]); setPickupLtl('');
+    setPickupReady(''); setPickupClose('');
+    setDeclaredValue(''); setCommodity('');
+    setActiveAccessorials([]); setSignatureType('signature_direct'); setDgType('ACCESSIBLE');
+    setBatteryMaterial('LITHIUM_ION'); setBatteryPacking('CONTAINED_IN_EQUIPMENT');
+    setHomeDeliveryType('appointment'); setHomeDeliveryDate(''); setLimitedAccessType('');
+    setSpotWeight(''); setSpotSkids(''); setAirService(''); setOceanType('');
+    setSpotGroups([emptyGroup()]); setSpotCommodity(''); setSpotNotes('');
     setResults(null);
-    setSpotSuccess(false);
+    setSpotResult(null);
+    setSpotError('');
     setOriginValidation(null);
     setDestValidation(null);
   }
@@ -477,8 +589,8 @@ export default function QuotePage() {
         </div>
         <div className={`${s.typeCard} ${s.spotType} ${currentType === 'ftl' ? s.active : ''}`} onClick={() => handleTypeChange('ftl')}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/><rect x="9" y="11" width="14" height="10" rx="1"/><circle cx="12" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>
-          <div className={s.typeLabel}>FTL Freight</div>
-          <div className={s.typeSub}>Full truckload</div>
+          <div className={s.typeLabel}>FTL / PTL</div>
+          <div className={s.typeSub}>Full or partial truckload</div>
           <span className={`${s.typeTag} ${s.tagSpot}`}>&#9993; Spot rate</span>
         </div>
         <div className={`${s.typeCard} ${s.spotType} ${currentType === 'air' ? s.active : ''}`} onClick={() => handleTypeChange('air')}>
@@ -495,23 +607,55 @@ export default function QuotePage() {
         </div>
       </div>
 
+      {/* Spot-rate service choice — decides which address details are needed */}
+      {currentType === 'air' && (
+        <div className="field" style={{ marginBottom: 16, maxWidth: 360 }}>
+          <label>Pick up required *</label>
+          <select value={airService} onChange={e => setAirService(e.target.value)}>
+            <option value="">Select</option>
+            <option value="pickup">Yes</option>
+            <option value="dropoff">No</option>
+          </select>
+        </div>
+      )}
+      {currentType === 'ocean' && (
+        <div className="field" style={{ marginBottom: 16, maxWidth: 360 }}>
+          <label>Ocean service type *</label>
+          <select value={oceanType} onChange={e => setOceanType(e.target.value)}>
+            <option value="">Select service type</option>
+            <option>LCL — Less than container load</option>
+            <option>FCL — 20ft container</option>
+            <option>FCL — 40ft container</option>
+            <option>FCL — 40ft high cube</option>
+          </select>
+        </div>
+      )}
+
       {/* Origin & Destination */}
       <div className={s.formCols}>
         <div>
-          <div className={s.colLabel}>Origin</div>
-          <AddressAutocomplete label="Search pickup address" placeholder="Start typing an address or postal code" onSelect={a => applyAddress('origin', a)} />
-          <div className="grid2">
-            <div className="field"><label>City</label><input placeholder="e.g. Toronto" value={origCity} onChange={e => { setOrigCity(e.target.value); setOriginValidation(null); }} /></div>
-            <div className="field"><label>Province / State</label><input placeholder="e.g. ON" value={origProvince} onChange={e => { setOrigProvince(e.target.value); setOriginValidation(null); }} /></div>
-          </div>
-          <div className="grid2">
-            <div className="field"><label>Postal / ZIP</label><input placeholder="M5V 3A8" value={origPostal} onChange={e => { setOrigPostal(e.target.value); setOriginValidation(null); }} /></div>
-            <div className="field"><label>Country</label>
-              <select value={origCountry} onChange={e => { setOrigCountry(e.target.value); setOriginValidation(null); }}>
-                <option value="CA">Canada</option><option value="US">USA</option><option value="CN">China</option><option value="GB">UK</option><option value="DE">Germany</option><option value="other">Other</option>
-              </select>
+          <div className={s.colLabel}>{currentType === 'air' && airService === 'pickup' ? 'Pickup address' : 'Origin'}</div>
+          {origMode === 'full' ? (
+            <>
+              <AddressAutocomplete key={`orig-${currentType}`} label="Search pickup address" onSelect={a => applyAddress('origin', a)} />
+              <div className="grid2">
+                <div className="field"><label>City</label><input value={origCity} onChange={e => { setOrigCity(e.target.value); setOrigStreet({ street: '', unit: '' }); setOriginValidation(null); }} /></div>
+                <div className="field"><label>Province / State</label><input value={origProvince} onChange={e => { setOrigProvince(e.target.value); setOriginValidation(null); }} /></div>
+              </div>
+              <div className="grid2">
+                <div className="field"><label>Postal / ZIP</label><input value={origPostal} onChange={e => { setOrigPostal(e.target.value); setOrigStreet({ street: '', unit: '' }); setOriginValidation(null); }} /></div>
+                <div className="field"><label>Country</label>
+                  <CountrySelect value={origCountry} onChange={v => { setOrigCountry(v); setOriginValidation(null); }} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="grid2">
+              <div className="field"><label>City</label><input value={origCity} onChange={e => { setOrigCity(e.target.value); setOrigStreet({ street: '', unit: '' }); }} /></div>
+              <div className="field"><label>Country</label><CountrySelect value={origCountry} onChange={setOrigCountry} /></div>
             </div>
-          </div>
+          )}
+          {origMode === 'full' && (<>
           {originValidation && originValidation.valid === true && (
             <div className={s.validationOk}>&#10003; Origin address verified{originValidation.classification !== 'UNKNOWN' ? ` (${originValidation.classification.toLowerCase()})` : ''}</div>
           )}
@@ -529,22 +673,31 @@ export default function QuotePage() {
           ) : originValidation && originValidation.valid === false ? (
             <div className={s.validationError}>&#10007; Origin address could not be validated. Please check city and postal code.</div>
           ) : null}
+          </>)}
         </div>
         <div>
           <div className={s.colLabel}>Destination</div>
-          <AddressAutocomplete label="Search delivery address" placeholder="Start typing an address or postal code" onSelect={a => applyAddress('destination', a)} />
-          <div className="grid2">
-            <div className="field"><label>City</label><input placeholder="e.g. Chicago" value={destCity} onChange={e => { setDestCity(e.target.value); setDestValidation(null); }} /></div>
-            <div className="field"><label>Province / State</label><input placeholder="e.g. IL" value={destProvince} onChange={e => { setDestProvince(e.target.value); setDestValidation(null); }} /></div>
-          </div>
-          <div className="grid2">
-            <div className="field"><label>Postal / ZIP</label><input placeholder="60601" value={destPostal} onChange={e => { setDestPostal(e.target.value); setDestValidation(null); }} /></div>
-            <div className="field"><label>Country</label>
-              <select value={destCountry} onChange={e => { setDestCountry(e.target.value); setDestValidation(null); }}>
-                <option value="US">USA</option><option value="CA">Canada</option><option value="CN">China</option><option value="GB">UK</option><option value="DE">Germany</option><option value="other">Other</option>
-              </select>
+          {destMode === 'full' ? (
+            <>
+              <AddressAutocomplete key={`dest-${currentType}`} label="Search delivery address" onSelect={a => applyAddress('destination', a)} />
+              <div className="grid2">
+                <div className="field"><label>City</label><input value={destCity} onChange={e => { setDestCity(e.target.value); setDestStreet({ street: '', unit: '' }); setDestValidation(null); }} /></div>
+                <div className="field"><label>Province / State</label><input value={destProvince} onChange={e => { setDestProvince(e.target.value); setDestValidation(null); }} /></div>
+              </div>
+              <div className="grid2">
+                <div className="field"><label>Postal / ZIP</label><input value={destPostal} onChange={e => { setDestPostal(e.target.value); setDestStreet({ street: '', unit: '' }); setDestValidation(null); }} /></div>
+                <div className="field"><label>Country</label>
+                  <CountrySelect value={destCountry} onChange={v => { setDestCountry(v); setDestValidation(null); }} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="grid2">
+              <div className="field"><label>City</label><input value={destCity} onChange={e => { setDestCity(e.target.value); setDestStreet({ street: '', unit: '' }); }} /></div>
+              <div className="field"><label>Country</label><CountrySelect value={destCountry} onChange={setDestCountry} /></div>
             </div>
-          </div>
+          )}
+          {destMode === 'full' && (<>
           {destValidation && destValidation.valid === true && (
             <div className={s.validationOk}>&#10003; Destination address verified{destValidation.classification !== 'UNKNOWN' ? ` (${destValidation.classification.toLowerCase()})` : ''}</div>
           )}
@@ -562,95 +715,53 @@ export default function QuotePage() {
           ) : destValidation && destValidation.valid === false ? (
             <div className={s.validationError}>&#10007; Destination address could not be validated. Please check city and postal code.</div>
           ) : null}
+          </>)}
         </div>
       </div>
 
       {/* INSTANT QUOTE fields */}
       {!isSpot && (
         <div>
+          <PickupWindow
+            date={{ envelope: pickupEnv, parcel: pickupParcel, ltl: pickupLtl }[currentType] || ''}
+            onDateChange={{ envelope: setPickupEnv, parcel: setPickupParcel, ltl: setPickupLtl }[currentType] || (() => {})}
+            ready={pickupReady} onReadyChange={setPickupReady}
+            close={pickupClose} onCloseChange={setPickupClose}
+            showTimes={wantsPickup}
+          />
+
           {currentType === 'envelope' && (
             <div className="grid4" style={{ marginBottom: '14px' }}>
-              <div className="field"><label>Weight (lbs)</label><input type="number" placeholder="0.5" min="0.1" step="0.1" value={weightEnv} onChange={e => setWeightEnv(e.target.value)} /></div>
+              <div className="field"><label>Weight (lbs)</label><input type="number" min="0.1" step="0.1" value={weightEnv} onChange={e => setWeightEnv(e.target.value)} /></div>
               <div className="field"><label>Pieces</label><input type="number" value={piecesEnv} min="1" onChange={e => setPiecesEnv(e.target.value)} /></div>
-              <div className="field"><label>Pickup date</label><input type="date" value={pickupEnv} onChange={e => setPickupEnv(e.target.value)} /></div>
-              <div className="field"><label>Currency</label><select value={currencyEnv} onChange={e => setCurrencyEnv(e.target.value)}><option value="CAD">CAD</option><option value="USD">USD</option></select></div>
             </div>
           )}
 
           {currentType === 'parcel' && (
             <div style={{ marginBottom: '14px' }}>
               <div className="grid4" style={{ marginBottom: '10px' }}>
-                <div className="field"><label>Weight (lbs)</label><input type="number" placeholder="10" min="0.1" value={weightParcel} onChange={e => setWeightParcel(e.target.value)} /></div>
+                <div className="field"><label>Weight (lbs)</label><input type="number" min="0.1" value={weightParcel} onChange={e => setWeightParcel(e.target.value)} /></div>
                 <div className="field"><label>Pieces</label><input type="number" value={piecesParcel} min="1" onChange={e => setPiecesParcel(e.target.value)} /></div>
-                <div className="field"><label>Pickup date</label><input type="date" value={pickupParcel} onChange={e => setPickupParcel(e.target.value)} /></div>
-                <div className="field"><label>Currency</label><select value={currencyParcel} onChange={e => setCurrencyParcel(e.target.value)}><option value="CAD">CAD</option><option value="USD">USD</option></select></div>
               </div>
               <div className="grid3">
-                <div className="field"><label>Length (in)</label><input type="number" placeholder="12" value={dimLParcel} onChange={e => setDimLParcel(e.target.value)} /></div>
-                <div className="field"><label>Width (in)</label><input type="number" placeholder="12" value={dimWParcel} onChange={e => setDimWParcel(e.target.value)} /></div>
-                <div className="field"><label>Height (in)</label><input type="number" placeholder="12" value={dimHParcel} onChange={e => setDimHParcel(e.target.value)} /></div>
-              </div>
-              <div className="grid3" style={{ marginTop: '10px' }}>
-                <div className="field">
-                  <label>FedEx packaging</label>
-                  <select value={fedexPackaging} onChange={e => { setFedexPackaging(e.target.value); if (e.target.value === 'YOUR_PACKAGING') setFedexOneRate(false); }}>
-                    <option value="YOUR_PACKAGING">My own packaging</option>
-                    <option value="FEDEX_ENVELOPE">FedEx® Envelope</option>
-                    <option value="FEDEX_PAK">FedEx® Pak</option>
-                    <option value="FEDEX_TUBE">FedEx® Tube</option>
-                    <option value="FEDEX_SMALL_BOX">FedEx® Small Box</option>
-                    <option value="FEDEX_MEDIUM_BOX">FedEx® Medium Box</option>
-                    <option value="FEDEX_LARGE_BOX">FedEx® Large Box</option>
-                    <option value="FEDEX_EXTRA_LARGE_BOX">FedEx® Extra Large Box</option>
-                  </select>
-                </div>
-                <label className="field" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 22, opacity: fedexPackaging === 'YOUR_PACKAGING' ? 0.5 : 1 }}>
-                  <input type="checkbox" style={{ width: 18, height: 18, padding: 0, appearance: 'auto', WebkitAppearance: 'checkbox', accentColor: 'var(--navy)', cursor: 'pointer' }} checked={fedexOneRate} disabled={fedexPackaging === 'YOUR_PACKAGING'} onChange={e => setFedexOneRate(e.target.checked)} />
-                  <span style={{ fontSize: 13 }}>FedEx One Rate® <span style={{ color: 'var(--text3)', fontSize: 11 }}>(US domestic only)</span></span>
-                </label>
+                <div className="field"><label>Length (in)</label><input type="number" value={dimLParcel} onChange={e => setDimLParcel(e.target.value)} /></div>
+                <div className="field"><label>Width (in)</label><input type="number" value={dimWParcel} onChange={e => setDimWParcel(e.target.value)} /></div>
+                <div className="field"><label>Height (in)</label><input type="number" value={dimHParcel} onChange={e => setDimHParcel(e.target.value)} /></div>
               </div>
             </div>
           )}
 
           {currentType === 'ltl' && (
             <div style={{ marginBottom: '14px' }}>
-              <div className="grid4" style={{ marginBottom: '10px' }}>
-                <div className="field"><label>Weight (lbs)</label><input type="number" placeholder="500" min="1" value={weightLtl} onChange={e => setWeightLtl(e.target.value)} /></div>
-                <div className="field"><label>Pieces</label><input type="number" value={piecesLtl} min="1" onChange={e => setPiecesLtl(e.target.value)} /></div>
-                <div className="field"><label>Freight class</label>
-                  <select
-                    value={freightClassAuto ? 'auto' : freightClass}
-                    onChange={e => {
-                      if (e.target.value === 'auto') { setFreightClassAuto(true); return; }
-                      setFreightClassAuto(false);
-                      setFreightClass(e.target.value);
-                    }}
-                  >
-                    <option value="auto">{autoFreightClass ? `Auto — class ${autoFreightClass.freightClass}` : 'Auto (enter weight)'}</option>
-                    {FREIGHT_CLASSES.map(v => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                  {freightClassAuto && autoFreightClass && (
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-                      {autoFreightClass.density} lb/ft³ density{!(dimLLtl && dimWLtl && dimHLtl) ? ' (using 48×40×48 in pallet — enter dimensions for accuracy)' : ''}
-                    </div>
-                  )}
-                </div>
-                <div className="field"><label>Currency</label><select value={currencyLtl} onChange={e => setCurrencyLtl(e.target.value)}><option value="CAD">CAD</option><option value="USD">USD</option></select></div>
-              </div>
-              <div className="grid4">
-                <div className="field"><label>Length (in)</label><input type="number" placeholder="48" value={dimLLtl} onChange={e => setDimLLtl(e.target.value)} /></div>
-                <div className="field"><label>Width (in)</label><input type="number" placeholder="40" value={dimWLtl} onChange={e => setDimWLtl(e.target.value)} /></div>
-                <div className="field"><label>Height (in)</label><input type="number" placeholder="48" value={dimHLtl} onChange={e => setDimHLtl(e.target.value)} /></div>
-                <div className="field"><label>Pickup date</label><input type="date" value={pickupLtl} onChange={e => setPickupLtl(e.target.value)} /></div>
-              </div>
+              <LtlGroups groups={ltlGroups} onChange={setLtlGroups} />
             </div>
           )}
 
           <div className="grid2" style={{ marginBottom: '14px' }}>
-            <div className="field"><label>Declared value ($)</label><input type="number" placeholder="Optional" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
+            <div className="field"><label>Declared value ($)</label><input type="number" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
               {isParcelType && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Extends the carrier&apos;s liability to this value; carriers may add a charge.</div>}
             </div>
-            <div className="field"><label>Commodity</label><input placeholder="e.g. Auto parts" value={commodity} onChange={e => setCommodity(e.target.value)} /></div>
+            <div className="field"><label>Commodity</label><input value={commodity} onChange={e => setCommodity(e.target.value)} /></div>
           </div>
 
           <div className={s.sectionLabel}>Accessorials</div>
@@ -670,21 +781,32 @@ export default function QuotePage() {
           {(parcelHas('signature') || parcelHas('home_delivery') || parcelHas('hazmat')) && (
             <div className="grid2" style={{ margin: '10px 0 4px' }}>
               {parcelHas('signature') && (
-                <div className="field"><label>Signature type</label>
-                  <select value={signatureType} onChange={e => setSignatureType(e.target.value)}>
-                    {SIGNATURE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
+                <div className="field"><label>FedEx® Delivery Signature Options</label>
+                  {/* All choices visible at once (FedEx validation screenshots show the full wording). */}
+                  <div className={s.optionList} role="radiogroup" aria-label="FedEx® Delivery Signature Options">
+                    {SIGNATURE_TYPES.map(t => (
+                      <label key={t.value} className={`${s.optionItem} ${signatureType === t.value ? s.optionActive : ''}`}>
+                        <input type="radio" name="signatureType" checked={signatureType === t.value} onChange={() => setSignatureType(t.value)} />
+                        {t.label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
               {parcelHas('home_delivery') && (
-                <div className="field"><label>Home delivery option</label>
-                  <select value={homeDeliveryType} onChange={e => setHomeDeliveryType(e.target.value)}>
-                    {HOME_DELIVERY_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
+                <div className="field"><label>Home Delivery Options</label>
+                  <div className={s.optionList} role="radiogroup" aria-label="Home Delivery Options">
+                    {HOME_DELIVERY_TYPES.map(t => (
+                      <label key={t.value} className={`${s.optionItem} ${homeDeliveryType === t.value ? s.optionActive : ''}`}>
+                        <input type="radio" name="homeDeliveryType" checked={homeDeliveryType === t.value} onChange={() => setHomeDeliveryType(t.value)} />
+                        {t.label}
+                      </label>
+                    ))}
+                  </div>
                   {homeDeliveryType === 'date_certain' && (
                     <input type="date" style={{ marginTop: 6 }} min={getFields().pickupDate || today} value={homeDeliveryDate} onChange={e => setHomeDeliveryDate(e.target.value)} />
                   )}
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>FedEx Home Delivery® option, for US residential deliveries only.</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>For US residential deliveries only.</div>
                 </div>
               )}
               {parcelHas('hazmat') && (
@@ -708,6 +830,22 @@ export default function QuotePage() {
                 </div>
               )}
             </div>
+          )}
+          {currentType === 'ltl' && (
+            <div style={{ fontSize: 11, color: 'var(--text3)', margin: '6px 0 0' }}>LTL deliveries are always signed for, so no signature option is needed.</div>
+          )}
+          {currentType === 'ltl' && selectedAccessorials.some(a => a.startsWith('limited_access')) && (
+            <div className="field" style={{ margin: '10px 0 4px', maxWidth: 320 }}>
+              <label>Type of limited access site</label>
+              <select value={limitedAccessType} onChange={e => setLimitedAccessType(e.target.value)}>
+                <option value="">Select the type of site</option>
+                {LIMITED_ACCESS_SITES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Some carriers price limited access by the type of site.</div>
+            </div>
+          )}
+          {isParcelType && (
+            <div style={{ ...FEDEX_DISCLAIMER_STYLE, margin: '10px 0 0' }}>{FEDEX_DISCLAIMER}</div>
           )}
           {parcelHas('saturday_pickup') && (
             <div style={{ fontSize: 11, color: 'var(--text3)', margin: '6px 0 0' }}>
@@ -738,53 +876,47 @@ export default function QuotePage() {
             </div>
           </div>
 
-          <div className="grid2" style={{ marginBottom: '14px' }}>
-            <div className="field"><label>Total weight (lbs)</label><input type="number" placeholder="e.g. 5000" value={spotWeight} onChange={e => setSpotWeight(e.target.value)} /></div>
-            <div className="field"><label>Total pieces / units</label><input type="number" placeholder="e.g. 1 container" value={spotPieces} onChange={e => setSpotPieces(e.target.value)} /></div>
-          </div>
-          <div className="grid2" style={{ marginBottom: '14px' }}>
-            <div className="field"><label>Dimensions (L x W x H)</label><input placeholder="e.g. 48 x 40 x 60 in per pallet" value={spotDims} onChange={e => setSpotDims(e.target.value)} /></div>
-            <div className="field"><label>Ready / pickup date</label><input type="date" value={spotDate} onChange={e => setSpotDate(e.target.value)} /></div>
-          </div>
-
-          {(currentType === 'air' || currentType === 'ocean') && (
+          {currentType === 'ftl' && (
             <div className="grid2" style={{ marginBottom: '14px' }}>
-              <div className="field"><label>Origin port / airport</label><input placeholder="e.g. YYZ, Port of Toronto" value={spotOrigPort} onChange={e => setSpotOrigPort(e.target.value)} /></div>
-              <div className="field"><label>Destination port / airport</label><input placeholder="e.g. ORD, Port of Chicago" value={spotDestPort} onChange={e => setSpotDestPort(e.target.value)} /></div>
+              <div className="field"><label>Total weight (lbs) *</label><input type="number" min="0" value={spotWeight} onChange={e => setSpotWeight(e.target.value)} /></div>
+              <div className="field"><label>Number of skids *</label><input type="number" min="1" step="1" value={spotSkids} onChange={e => setSpotSkids(e.target.value)} /></div>
             </div>
           )}
 
-          {currentType === 'ocean' && (
-            <div className="field" style={{ marginBottom: '14px' }}>
-              <label>Ocean service type</label>
-              <select value={oceanType} onChange={e => setOceanType(e.target.value)}>
-                <option>LCL — Less than container load</option>
-                <option>FCL — 20ft container</option>
-                <option>FCL — 40ft container</option>
-                <option>FCL — 40ft high cube</option>
-              </select>
-            </div>
+          {(currentType === 'air' || isLcl) && (
+            <>
+              <div className="grid2" style={{ marginBottom: '14px' }}>
+                <div className="field"><label>Total weight (kg) *</label><input type="number" min="0" step="any" value={spotWeight} onChange={e => setSpotWeight(e.target.value)} /></div>
+                <div className="field"><label>Total pieces</label><input value={groupTotals(spotGroups, spotWeight).pieces || ''} readOnly tabIndex={-1} style={{ background: 'var(--off-white)' }} /></div>
+              </div>
+              <PackageGroups groups={spotGroups} onChange={setSpotGroups} totalWeightKg={spotWeight} />
+            </>
           )}
 
-          <div className="grid2" style={{ marginBottom: '14px' }}>
-            <div className="field"><label>Commodity / cargo description</label><input placeholder="e.g. Auto parts, electronics" value={spotCommodity} onChange={e => setSpotCommodity(e.target.value)} /></div>
-            <div className="field"><label>Declared value (CAD or USD)</label><input type="number" placeholder="Optional" value={spotValue} onChange={e => setSpotValue(e.target.value)} /></div>
-          </div>
-          <div className="field" style={{ marginBottom: '20px' }}>
-            <label>Special requirements or notes</label>
-            <textarea rows="3" placeholder="Dangerous goods class, temperature controlled, fragile, customs brokerage needed, declared value, etc." value={spotNotes} onChange={e => setSpotNotes(e.target.value)} />
-          </div>
+          {(currentType !== 'ocean' || oceanType) && (
+            <>
+              <div className="field" style={{ marginBottom: '14px' }}>
+                <label>Commodity / cargo description</label>
+                <input value={spotCommodity} onChange={e => setSpotCommodity(e.target.value)} />
+              </div>
+              <div className="field" style={{ marginBottom: '20px' }}>
+                <label>{isFcl ? 'Instructions' : 'Special requirements or notes'}</label>
+                <textarea rows="3" value={spotNotes} onChange={e => setSpotNotes(e.target.value)} />
+              </div>
+            </>
+          )}
 
           <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>Quoted rates are estimates and may be subject to adjustment based on actual shipment details and carrier surcharges.</div>
-          <button className={s.btnSpotSubmit} onClick={submitSpotRate}>
+          <button className={s.btnSpotSubmit} onClick={submitSpotRate} disabled={spotSubmitting}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            Send spot rate request to IFF Cargo
+            {spotSubmitting ? 'Sending…' : 'Send spot rate request to IFF Cargo'}
           </button>
 
-          {spotSuccess && (
+          {spotError && <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 12 }}>{spotError}</div>}
+          {spotResult && (
             <div className={s.successBox}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              <div><strong>Request sent!</strong> Our team will review your shipment and respond with a quote within 2–4 business hours. Call us at <strong>416 798 4151</strong> if you need an urgent response.</div>
+              <div><strong>Request {spotResult.requestNumber} sent!</strong> Our team will review your shipment and respond with a quote within 2–4 business hours. You&apos;ll find the price, and can book it, under <Link href="/portal/spot-rates">Spot-rate requests</Link>. Call us at <strong>416 798 4151</strong> if you need an urgent response.</div>
             </div>
           )}
         </div>
@@ -808,7 +940,7 @@ export default function QuotePage() {
             </div>
           )}
           {results.quotes.map((r, i) => {
-            const isBest = i === 0;
+            const isBest = i === 0 && !r.notIncluded;
             const best = results.quotes[0];
             // "vs best" only makes sense against a rate in the same currency.
             const savings = i > 0 && r.currency === best.currency ? (r.displayRate - best.displayRate).toFixed(2) : null;
@@ -837,6 +969,11 @@ export default function QuotePage() {
                     <span className={s.riChip}>&#9201; {transitStr}</span>
                     {r.deliveryDate && <span className={`${s.riChip} ${s.riChipDelivery}`}>&#128197; Est. {r.deliveryDate}</span>}
                   </div>
+                  {r.notIncluded && (
+                    <div className={s.notIncluded}>
+                      &#9888; Not included: <b>{r.notIncluded.labels.join(', ')}</b>. {r.notIncluded.message}
+                    </div>
+                  )}
                   {r.carrier.id === 'fedex' && <div style={{ ...FEDEX_DISCLAIMER_STYLE, marginTop: 6 }}>{FEDEX_DISCLAIMER}</div>}
                   {r.carrier.id === 'dhl' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>{DHL_DISCLAIMER}</div>}
                 </div>
@@ -857,6 +994,13 @@ export default function QuotePage() {
                       Download Label ({labels[r.quoteRateId].docType})
                     </button>
                   )}
+                  {bookState === 'booked' && pickups[r.quoteRateId] && (
+                    <div style={{ fontSize: 11, marginTop: 4, color: pickups[r.quoteRateId].scheduled ? 'var(--text3)' : '#b45309' }}>
+                      {pickups[r.quoteRateId].scheduled
+                        ? `Pickup booked · confirmation ${pickups[r.quoteRateId].confirmationNumber}`
+                        : `Pickup not scheduled yet. ${pickups[r.quoteRateId].message}`}
+                    </div>
+                  )}
                   {bookState === 'booked' && !labels[r.quoteRateId] && r.carrier.id === 'csa' && (
                     <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>CSA does not provide shipping labels via API</div>
                   )}
@@ -864,6 +1008,22 @@ export default function QuotePage() {
               </div>
             );
           })}
+          {results.unavailable?.map((u, i) => (
+            <div key={`na-${i}`} className={`${s.resultCard} ${s.unavailableCard}`}>
+              <CarrierLogo
+                id={u.carrier.id}
+                label={u.carrier.abbr}
+                chip={{ bg: u.carrier.bg, color: u.carrier.color, borderColor: u.carrier.bc }}
+                className={s.carrierBadge}
+                fallbackStyle={{ fontSize: 13 }}
+              />
+              <div className={s.ri}>
+                <div className={s.riName}>{u.carrier.name}</div>
+                <div className={s.riSvc}>{u.message}</div>
+              </div>
+              <div className={s.rr}><div className={s.rrCur}>Not available</div></div>
+            </div>
+          ))}
         </div>
       )}
       {confirmRate && (
@@ -875,5 +1035,14 @@ export default function QuotePage() {
         />
       )}
     </div>
+  );
+}
+
+function CountrySelect({ value, onChange }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}>
+      <option value="">Select country</option>
+      {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+    </select>
   );
 }

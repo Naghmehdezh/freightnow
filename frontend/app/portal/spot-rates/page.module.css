@@ -1,0 +1,6 @@
+/* Extra badges for spot-rate statuses (shared by the customer and IFF staff pages). */
+.badgeAmber { background: var(--amber-light); color: var(--amber); }
+.badgeRed { background: var(--red-light); color: var(--red); }
+.price { font-family: var(--mono); font-weight: 700; color: var(--navy); white-space: nowrap; }
+.note { font-size: 12px; color: var(--text2); margin-top: 4px; max-width: 280px; }
+.successMsg { background: var(--green-light); color: var(--green); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }

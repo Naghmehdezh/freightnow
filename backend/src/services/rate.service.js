@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { getCarriersForShipment, supportsShipment, getCarrier } = require('../carriers');
+const { unavailableOptions, unavailableMessage, labelFor, OptionUnavailableError } = require('../carriers/accessorials');
 const { priceQuote, freightClass } = require('./pricingEngine.service');
 const { getActiveRuleSet } = require('./pricingRules.service');
 const fedexValidationMode = require('./fedexValidationMode');
@@ -8,6 +9,7 @@ const Quote = require('../models/Quote');
 const QuoteRate = require('../models/QuoteRate');
 const { generateQuoteNumber } = require('../utils/trackingGenerator');
 const { endOfDay } = require('../utils/dateHelpers');
+const { normalizeLineItems } = require('../utils/lineItems');
 
 // envelope/parcel -> courier mode (per-piece dim-weight); ltl -> ltl mode (scale weight,
 // density drives freight class). FTL/air/ocean are a separate staff-priced spot-rate flow and
@@ -28,13 +30,16 @@ function buildPricingInputs(params, ruleSet) {
   const { mode, packaging } = SHIPMENT_TYPE_TO_MODE[params.shipmentType] || SHIPMENT_TYPE_TO_MODE.ltl;
   const scope = detectScope(params.origin.country, params.destination.country);
   const pieces = params.pieces || 1;
-  const lines = [{
-    qty: pieces,
-    l: params.dimensions?.length || 0,
-    w: params.dimensions?.width || 0,
-    h: params.dimensions?.height || 0,
-    wt: params.weight / pieces,
-  }];
+  // LTL: one engine line per group of identical pieces (weight per piece).
+  const lines = params.lineItems?.length
+    ? params.lineItems.map(i => ({ qty: i.pieces, l: i.length, w: i.width, h: i.height, wt: i.weight }))
+    : [{
+      qty: pieces,
+      l: params.dimensions?.length || 0,
+      w: params.dimensions?.width || 0,
+      h: params.dimensions?.height || 0,
+      wt: params.weight / pieces,
+    }];
   return { cost: null, scope, mode, packaging, lines, currency: params.currency || 'CAD', ruleSet };
 }
 
@@ -54,6 +59,28 @@ function priceRate(rate, currency, inputs) {
   return priceQuote({ ...engineInput, cost: rate, currency }, ruleSet);
 }
 
+// Markup applies to the freight only: the carrier's accessorial charges (r.accessorialCharges,
+// in the rate's currency) are passed through at cost on top of the marked-up freight.
+function priceWithAccessorials(r, currency, inputs) {
+  const accTotal = Math.round((r.accessorialCharges || []).reduce((sum, c) => sum + (c.amount || 0), 0) * 100) / 100;
+  const freight = accTotal > 0 && r.rate - accTotal > 0 ? r.rate - accTotal : r.rate;
+  const passThrough = freight === r.rate ? 0 : accTotal;
+  const priced = priceRate(freight, currency, inputs);
+  if (!passThrough) return priced;
+  const fx = currency === 'USD' ? priced.fxRate : 1;
+  const sell = Math.round((priced.sell + passThrough) * 100) / 100;
+  return {
+    ...priced,
+    sell,
+    cost: r.rate,
+    costCad: Math.round(r.rate * fx * 100) / 100,
+    sellCad: Math.round((priced.sellCad + passThrough * fx) * 100) / 100,
+    grossMargin: Math.round((sell - r.rate) * 100) / 100,
+    markupPct: Math.round(((sell / r.rate - 1) * 100) * 10) / 10,
+    accessorialTotal: passThrough,
+  };
+}
+
 // LTL freight class from density (lb per cubic foot) — same NMFC density table the pricing
 // engine uses. Weight is the shipment total; dimensions are per piece.
 function estimateFreightClass({ weight, pieces, dimensions }) {
@@ -64,35 +91,52 @@ function estimateFreightClass({ weight, pieces, dimensions }) {
 }
 
 async function getAllRates(params, userId) {
-  if (params.shipmentType === 'ltl' && !params.freightClass) {
-    params.freightClass = estimateFreightClass(params) || undefined;
-  }
-  const [carriers, ruleSet] = await Promise.all([getCarriersForShipment(params), getActiveRuleSet()]);
+  // LTL: line items (groups of pieces) with a freight class each; sets the shipment totals.
+  if (params.shipmentType === 'ltl') normalizeLineItems(params);
+  const [coverage, ruleSet] = await Promise.all([getCarriersForShipment(params), getActiveRuleSet()]);
   const inputs = buildPricingInputs(params, ruleSet);
 
-  const results = await Promise.allSettled(
-    carriers.map(async (carrier) => {
-      const rates = await carrier.getRates(params);
-      return rates.map(r => ({
-        carrierId: carrier.id,
-        carrierName: carrier.name,
-        ...r,
-      }));
-    })
-  );
-
-  // Collect successful results
-  const allRates = [];
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      allRates.push(...result.value);
+  // Every carrier is quoted. Options a carrier can't provide are left out of its request, and its
+  // rates say so (notIncluded) — the customer can still book them.
+  const requested = params.accessorials || [];
+  const carriers = coverage.filter(c => c.canQuote(params));
+  const results = await Promise.allSettled(carriers.map(async (carrier) => {
+    const missing = unavailableOptions(carrier.id, requested, params);
+    let excluded = missing.map(m => m.option);
+    const notes = missing.length ? [unavailableMessage(missing)] : [];
+    let attempt = { ...params, accessorials: requested.filter(a => !excluded.includes(a)) };
+    let rates;
+    try {
+      rates = await carrier.getRates(attempt);
+    } catch (err) {
+      if (!(err instanceof OptionUnavailableError)) throw err;
+      // Found only at quote time (e.g. FedEx Home Delivery® outside the US): quote once more
+      // without those options (all of them when the carrier couldn't say which).
+      const drop = err.options?.length ? err.options : attempt.accessorials;
+      excluded = [...excluded, ...drop];
+      notes.push(err.message);
+      attempt = { ...attempt, accessorials: attempt.accessorials.filter(a => !drop.includes(a)) };
+      rates = await carrier.getRates(attempt);
     }
-  }
+    const notIncluded = excluded.length
+      ? { options: [...new Set(excluded)], labels: [...new Set(excluded)].map(o => labelFor(o, params.shipmentType)), message: notes.join(' ') }
+      : null;
+    return rates.map(r => ({ carrierId: carrier.id, carrierName: carrier.name, ...r, ...(notIncluded && { notIncluded }) }));
+  }));
+
+  const allRates = [];
+  const unavailable = [];
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled') allRates.push(...result.value);
+    else if (result.reason instanceof OptionUnavailableError) {
+      unavailable.push({ carrierId: carriers[i].id, carrierName: carriers[i].name, message: result.reason.message });
+    }
+  });
 
   // Price each rate through the engine and sort
   const processedRates = allRates.map((r) => {
     const currency = carrierCurrency(r);
-    const priced = priceRate(r.rate, currency, inputs);
+    const priced = priceWithAccessorials(r, currency, inputs);
     // TEMPORARY (FedEx validation screenshots): show FedEx's exact rate, no markup.
     if (r.carrierId === 'fedex' && fedexValidationMode.isOn()) {
       const fx = inputs.ruleSet.usdToCadRate || 1.40;
@@ -102,10 +146,12 @@ async function getAllRates(params, userId) {
   });
   // Rates can be in different currencies, so "cheapest" is decided on the engine's CAD
   // equivalent of the sell price — ordering only; every displayed price stays in its own currency.
-  processedRates.sort((a, b) => a.pricingResult.sellCad - b.pricingResult.sellCad);
+  // Rates that include every selected option come first, so "best rate" is never one missing a
+  // requested service.
+  processedRates.sort((a, b) => (!!a.notIncluded - !!b.notIncluded) || (a.pricingResult.sellCad - b.pricingResult.sellCad));
 
   // Mark best rate
-  if (processedRates.length > 0) {
+  if (processedRates.length > 0 && !processedRates[0].notIncluded) {
     processedRates[0].isBestRate = true;
   }
 
@@ -139,9 +185,12 @@ async function getAllRates(params, userId) {
           dimL: params.dimensions?.length,
           dimW: params.dimensions?.width,
           dimH: params.dimensions?.height,
+          lineItems: params.lineItems,
           freightClass: params.freightClass,
           currency: params.currency || 'CAD',
           pickupDate: params.pickupDate,
+          pickupReadyTime: params.pickupReadyTime,
+          pickupCloseTime: params.pickupCloseTime,
           declaredValue: params.declaredValue,
           commodity: params.commodity,
           accessorials: params.accessorials ? JSON.stringify(params.accessorials) : null,
@@ -151,6 +200,7 @@ async function getAllRates(params, userId) {
             dgType: params.dgType,
             battery: params.battery,
             homeDeliveryDate: params.homeDeliveryDate,
+            limitedAccessType: params.limitedAccessType,
           },
           expiresAt,
         }], { session });
@@ -167,6 +217,9 @@ async function getAllRates(params, userId) {
           baseRate: r.baseRate,
           displayRate: r.displayRate,
           engineRate: r.displayRate,
+          accessorialCharges: r.accessorialCharges || [],
+          notIncludedOptions: r.notIncluded?.options || [],
+          notIncludedMessage: r.notIncluded?.message,
           transitDays: r.transitDays,
           estimatedDelivery: r.deliveryDate,
           isLiveRate: r.isLive || false,
@@ -209,7 +262,10 @@ async function getAllRates(params, userId) {
       isLiveRate: r.isLive || false,
       isBestRate: r.isBestRate || false,
       flags: r.pricingResult.flags,
+      // Selected options this carrier couldn't include in its price (the rate is still bookable).
+      notIncluded: r.notIncluded || null,
     })),
+    unavailable,
   };
 }
 

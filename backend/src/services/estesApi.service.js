@@ -164,4 +164,9 @@ function createBol(body) {
   return _authenticatedRequest('POST', '/v1/bol', body);
 }
 
-module.exports = { getBaseUrl, isConfigured, getToken, clearToken, rateQuote, trackShipment, createBol };
+// Pickup request: orders the truck (the BOL alone doesn't).
+function createPickup(body) {
+  return _authenticatedRequest('POST', '/v1/pickup-requests', body);
+}
+
+module.exports = { getBaseUrl, isConfigured, getToken, clearToken, rateQuote, trackShipment, createBol, createPickup };

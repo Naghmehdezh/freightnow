@@ -71,17 +71,22 @@ export default function ShipmentsPage() {
     return matchStatus && matchSearch;
   });
 
-  function getBadgeClass(status) {
-    if (status === 'delivered') return s.badgeDelivered;
-    if (status === 'in_transit') return s.badgeTransit;
-    if (status === 'pending') return s.badgePending;
+  function getBadgeClass(ship) {
+    if (ship.status === 'delivered') return s.badgeDelivered;
+    if (ship.status === 'in_transit') return s.badgeTransit;
+    if (ship.status === 'pending') return ship.pickupStatus === 'to_arrange' ? s.badgeException : s.badgePending;
     return s.badgeException;
   }
 
-  function getBadgeLabel(status) {
-    if (status === 'delivered') return '● Delivered';
-    if (status === 'in_transit') return '↦ In transit';
-    if (status === 'pending') return '○ Pending';
+  // Not picked up yet: say whether the carrier confirmed the pickup or IFF still has to book it.
+  function getBadgeLabel(ship) {
+    if (ship.status === 'delivered') return '● Delivered';
+    if (ship.status === 'in_transit') return '↦ In transit';
+    if (ship.status === 'pending') {
+      if (ship.pickupStatus === 'scheduled') return '○ Awaiting pickup';
+      if (ship.pickupStatus === 'to_arrange') return '! Pickup to be arranged';
+      return '○ Booked';
+    }
     return '! Exception';
   }
 
@@ -90,7 +95,7 @@ export default function ShipmentsPage() {
       <div className={s.filters}>
         {['all', 'in_transit', 'delivered', 'pending'].map(f => (
           <button key={f} className={`${s.filterBtn} ${filter === f ? s.filterBtnActive : ''}`} onClick={() => setFilter(f)}>
-            {f === 'all' ? 'All' : f === 'in_transit' ? 'In transit' : f === 'delivered' ? 'Delivered' : 'Pending'}
+            {f === 'all' ? 'All' : f === 'in_transit' ? 'In transit' : f === 'delivered' ? 'Delivered' : 'Not picked up yet'}
           </button>
         ))}
         <input className={s.searchInput} placeholder="Search tracking, carrier, route…" value={search} onChange={e => setSearch(e.target.value)} />
@@ -117,7 +122,7 @@ export default function ShipmentsPage() {
                   <td>{ship.booked || ship.bookedAt?.split('T')[0]}</td>
                   <td>{ship.delivery || ship.estimatedDelivery?.split('T')[0] || '—'}</td>
                   <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{ship.cost || (ship.booking?.sellRate ? `${ship.booking.currency === 'USD' ? 'US$' : 'C$'}${ship.booking.sellRate.toFixed(2)}` : '—')}</td>
-                  <td><span className={`${s.badge} ${getBadgeClass(ship.status)}`}>{getBadgeLabel(ship.status)}</span></td>
+                  <td><span className={`${s.badge} ${getBadgeClass(ship)}`}>{getBadgeLabel(ship)}</span></td>
                   <td><button className={s.btnAction} onClick={() => setExpandedRow(expandedRow === i ? null : i)}>Details</button></td>
                 </tr>
                 {expandedRow === i && (

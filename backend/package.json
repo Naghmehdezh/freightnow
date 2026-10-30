@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "db:seed": "node src/seed.js",
     "db:reset": "node src/scripts/dropDatabase.js && npm run db:seed",
-    "carriers:sync": "node src/scripts/syncCarrierMapping.js"
+    "carriers:sync": "node src/scripts/syncCarrierMapping.js",
+    "carriers:check": "node src/scripts/checkCarrierRates.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

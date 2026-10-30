@@ -3,6 +3,9 @@ const { addBusinessDays, formatDate } = require('../utils/dateHelpers');
 const { getToken, getBaseUrl, httpsPost, invalidateToken } = require('../services/fedexAuth.service');
 const { carriers } = require('../config/env');
 const validationMode = require('../services/fedexValidationMode');
+const { OptionUnavailableError, labelFor } = require('./accessorials');
+const { pickupWindow } = require('../utils/pickupWindow');
+const { localTimestamp } = require('../utils/timeZones');
 
 // Official FedEx service names with their registered marks, exactly as FedEx requires them to be
 // displayed (Integrator validation: e.g. "FedEx Ground®", "FedEx International Priority® Express").
@@ -65,6 +68,21 @@ const LTL_SERVICES = new Set(['FEDEX_FREIGHT_ECONOMY', 'FEDEX_FREIGHT_PRIORITY']
 const GROUND_SERVICES = new Set(['FEDEX_GROUND', 'GROUND_HOME_DELIVERY', 'SMART_POST', 'FEDEX_GROUND_ECONOMY',
   'FEDEX_INTERNATIONAL_GROUND', 'INTERNATIONAL_GROUND']);
 
+// Labels for the FedEx surcharges shown as accessorial lines on a rate.
+const FEDEX_SURCHARGE_LABELS = {
+  RESIDENTIAL_DELIVERY: 'Residential Delivery',
+  SIGNATURE_OPTION: 'Signature',
+  DANGEROUS_GOODS: 'Dangerous goods',
+  SATURDAY_DELIVERY: 'Saturday delivery',
+  SATURDAY_PICKUP: 'Saturday pickup',
+  HOLD_AT_LOCATION: 'Hold at location',
+  HOME_DELIVERY_APPOINTMENT: 'FedEx Appointment Home Delivery®',
+  HOME_DELIVERY_EVENING: 'FedEx Evening Home Delivery®',
+  HOME_DELIVERY_DATE_CERTAIN: 'FedEx Date Certain Home Delivery®',
+  INSURED_VALUE: 'Declared value',
+  DECLARED_VALUE: 'Declared value',
+};
+
 // Plain names FedEx sometimes returns (e.g. Track's "FedEx Ground") → trademarked form.
 const PLAIN_TO_MARKED = Object.fromEntries(
   Object.values(FEDEX_SERVICE_NAMES).map(n => [n.replace(/®/g, '').replace(/\s+/g, ' ').trim().toLowerCase(), n])
@@ -89,6 +107,19 @@ class FedExAdapter extends CarrierAdapter {
     try {
       return await this._getLiveRates(params);
     } catch (err) {
+      if (err instanceof OptionUnavailableError) throw err;
+      // FedEx rejects the whole request when it can't combine the selected options with any
+      // service/packaging (SERVICE.PACKAGECOMBINATION.INVALID, …SPECIALSERVICE…).
+      const codes = (err.body?.errors || []).map(e => e.code).join(' ');
+      if (params.accessorials?.length && err.statusCode === 400 && /PACKAGECOMBINATION|SPECIALSERVICE/i.test(codes)) {
+        // FedEx Home Delivery® is residential-only: FedEx rejects it to business-only ZIP codes
+        // (e.g. 10118, the Empire State Building) — leave out just that option and say why.
+        const homeDelivery = params.accessorials.filter(a => ['appointment', 'evening_delivery', 'date_certain'].includes(a));
+        if (homeDelivery.length) {
+          throw new OptionUnavailableError("FedEx Home Delivery® isn't available to this destination ZIP code (residential addresses only).", homeDelivery);
+        }
+        throw new OptionUnavailableError("FedEx can't combine the selected options on this shipment.", null);
+      }
       console.error('[FEDEX-RATE] Live rates failed:', err.message);
       return [];
     }
@@ -125,7 +156,6 @@ class FedExAdapter extends CarrierAdapter {
       battery: params.battery,
       homeDeliveryDate: params.homeDeliveryDate,
     });
-    if (!special) return [];
     const specialServiceTypes = special.shipmentTypes;
     // FedEx One Rate® is US-domestic only and needs FedEx packaging — sending it on any other
     // shipment makes FedEx reject the whole request (SERVICE.PACKAGECOMBINATION.INVALID).
@@ -185,7 +215,8 @@ class FedExAdapter extends CarrierAdapter {
           paymentType: 'SENDER',
           payor: { responsibleParty: { accountNumber: { value: accountNumber } } },
         },
-        pickupType: 'USE_SCHEDULED_PICKUP',
+        // Pickup option: FedEx will be asked to collect it; otherwise the shipper's regular pickup.
+        pickupType: accessorials.includes('pickup') ? 'CONTACT_FEDEX_TO_SCHEDULE' : 'USE_SCHEDULED_PICKUP',
         packagingType,
         rateRequestType: ['LIST', 'ACCOUNT'],
         shipDateStamp: shipDate,
@@ -247,10 +278,36 @@ class FedExAdapter extends CarrierAdapter {
         await new Promise(r => setTimeout(r, Math.min(1000 * attempt, 4000)));
       }
     }
-    return this._parseRateResponse(data, shipmentType, shipDate, { saturday: special.saturday });
+    const rates = this._parseRateResponse(data, shipmentType, shipDate, {
+      saturday: special.saturday,
+      chargeTypes: this._surchargeTypesFor(accessorials, params),
+      // The signature line is named after the option chosen (e.g. "Adult Signature Required").
+      signatureLabel: labelFor(accessorials.find(a => a.startsWith('signature_'))),
+    });
+    if (special.saturday && !rates.length) {
+      throw new OptionUnavailableError('FedEx has no Saturday delivery for this pickup date (it delivers on Saturday for Thursday/Friday shipments).', ['saturday']);
+    }
+    return rates;
   }
 
-  _parseRateResponse(data, shipmentType, shipDate, { saturday = false } = {}) {
+  // FedEx surcharge types that belong to the options the customer selected.
+  _surchargeTypesFor(accessorials, params) {
+    const has = a => accessorials.includes(a);
+    const types = [];
+    if (has('residential') || has('appointment') || has('evening_delivery') || has('date_certain')) types.push('RESIDENTIAL_DELIVERY');
+    if (accessorials.some(a => a.startsWith('signature'))) types.push('SIGNATURE_OPTION');
+    if (has('hazmat')) types.push('DANGEROUS_GOODS');
+    if (has('saturday')) types.push('SATURDAY_DELIVERY');
+    if (has('saturday_pickup')) types.push('SATURDAY_PICKUP');
+    if (has('hold_at_location')) types.push('HOLD_AT_LOCATION');
+    if (has('appointment')) types.push('HOME_DELIVERY_APPOINTMENT');
+    if (has('evening_delivery')) types.push('HOME_DELIVERY_EVENING');
+    if (has('date_certain')) types.push('HOME_DELIVERY_DATE_CERTAIN');
+    if (params.declaredValue > 0) types.push('INSURED_VALUE', 'DECLARED_VALUE');
+    return types;
+  }
+
+  _parseRateResponse(data, shipmentType, shipDate, { saturday = false, chargeTypes = [], signatureLabel = null } = {}) {
     const rateDetails = data.output?.rateReplyDetails || [];
     if (rateDetails.length === 0) {
       console.warn('[FEDEX-RATE] No rate details returned');
@@ -276,14 +333,20 @@ class FedExAdapter extends CarrierAdapter {
       const ratedShipmentDetails = detail.ratedShipmentDetails || [];
       let bestRate = null;
       let currency = null;
+      let surcharges = [];
       for (const rsd of ratedShipmentDetails) {
         const total = rsd.totalNetCharge;
         if (total != null) {
           bestRate = typeof total === 'number' ? total : parseFloat(total);
           currency = rsd.currency || null;
+          surcharges = rsd.shipmentRateDetail?.surCharges || [];
           break;
         }
       }
+      // FedEx's charge for each selected option (already in totalNetCharge).
+      const accessorialCharges = surcharges
+        .filter(c => chargeTypes.includes(c.type) && Number(c.amount) > 0)
+        .map(c => ({ code: c.type, label: (c.type === 'SIGNATURE_OPTION' && signatureLabel) || FEDEX_SURCHARGE_LABELS[c.type] || c.description || c.type, amount: Number(c.amount) }));
 
       if (bestRate == null || isNaN(bestRate)) continue;
 
@@ -349,6 +412,7 @@ class FedExAdapter extends CarrierAdapter {
         serviceName,
         serviceCode: serviceType,
         rate: Math.round(bestRate * 100) / 100,
+        accessorialCharges,
         // FedEx can bill in USD even for Canadian origins; rate.service converts to the quote currency.
         ...(currency && { currency }),
         transitDays: transitDays || 0,
@@ -389,14 +453,16 @@ class FedExAdapter extends CarrierAdapter {
     return true;
   }
 
-  // Turns the quote form's accessorials into FedEx rate-request pieces (each shape verified
-  // against the sandbox). Returns null when FedEx can't provide a selected option on this
-  // shipment — sending it anyway makes FedEx reject the whole request.
+  // Turns the quote form's accessorials into FedEx rate/ship request pieces (each shape verified
+  // against the sandbox). Throws OptionUnavailableError when FedEx can't provide a selected option
+  // on this shipment — sending it anyway makes FedEx reject the whole request.
   _mapAccessorialsToFedEx(accessorials, { usDomestic = false, shipDate, dgType, battery, homeDeliveryDate } = {}) {
     const has = a => accessorials.includes(a);
 
     // Liftgate and inside delivery are FedEx Freight® services; FedEx parcel services don't offer them.
-    if (['liftgate_pickup', 'liftgate_delivery', 'inside_delivery'].some(has)) return null;
+    if (['liftgate_pickup', 'liftgate_delivery', 'inside_delivery'].some(has)) {
+      throw new OptionUnavailableError('Liftgate and inside delivery are FedEx Freight® services, not offered for parcels.', ['liftgate_pickup', 'liftgate_delivery', 'inside_delivery'].filter(has));
+    }
 
     const out = { shipmentTypes: [], residential: has('residential'), saturday: has('saturday') };
     const packageTypes = [];
@@ -404,7 +470,9 @@ class FedExAdapter extends CarrierAdapter {
 
     // Saturday pickup: only on a Saturday ship date (FedEx rejects it on any other day).
     if (has('saturday_pickup')) {
-      if (!shipDate || new Date(`${shipDate}T12:00:00`).getDay() !== 6) return null;
+      if (!shipDate || new Date(`${shipDate}T12:00:00`).getDay() !== 6) {
+        throw new OptionUnavailableError('FedEx Saturday pickup needs a Saturday pickup date.', ['saturday_pickup']);
+      }
       out.shipmentTypes.push('SATURDAY_PICKUP');
     }
 
@@ -412,7 +480,7 @@ class FedExAdapter extends CarrierAdapter {
     if (has('hold_at_location')) out.shipmentTypes.push('HOLD_AT_LOCATION');
 
     // Signature is a package-level service and FedEx requires the type.
-    const signature = { signature_indirect: 'INDIRECT', signature_direct: 'DIRECT', signature_adult: 'ADULT', signature: 'DIRECT' };
+    const signature = { signature_none: 'NO_SIGNATURE_REQUIRED', signature_indirect: 'INDIRECT', signature_direct: 'DIRECT', signature_adult: 'ADULT', signature: 'DIRECT' };
     const sigKey = Object.keys(signature).find(has);
     if (sigKey) {
       packageTypes.push('SIGNATURE_OPTION');
@@ -447,7 +515,9 @@ class FedExAdapter extends CarrierAdapter {
       : has('evening_delivery') ? 'EVENING'
       : has('date_certain') ? 'DATE_CERTAIN' : null;
     if (homeDelivery) {
-      if (!usDomestic) return null;
+      if (!usDomestic) {
+        throw new OptionUnavailableError('FedEx Home Delivery® options are only offered for US deliveries.', ['appointment', 'evening_delivery', 'date_certain'].filter(has));
+      }
       out.residential = true;
       out.shipmentTypes.push('HOME_DELIVERY_PREMIUM');
       out.homeDeliveryPremiumDetail = {
@@ -552,7 +622,59 @@ class FedExAdapter extends CarrierAdapter {
 
   async bookShipment(details) {
     if (!this.isLive) throw new Error('FedEx booking is not available (no live credentials configured)');
-    return this._liveBookShipment(details);
+    const result = await this._liveBookShipment(details);
+    // App bookings also ask FedEx to come and collect it (test scripts only create labels).
+    if (details.requestPickup) result.pickup = await this._requestPickup(details, result);
+    return result;
+  }
+
+  // FedEx Pickup Request API: the Ship API's USE_SCHEDULED_PICKUP sends no driver, so ask for
+  // one in the customer's window. A failed pickup doesn't undo the label: the booking stands
+  // and the result says the pickup still has to be arranged.
+  async _requestPickup(details, shipResult) {
+    const shipper = details.shipper || {};
+    const country = shipper.address?.countryCode || 'CA';
+    const region = shipper.address?.stateOrProvinceCode;
+    const date = details.shipDatestamp || new Date().toISOString().split('T')[0];
+    const { ready, close } = pickupWindow(details);
+    const today = new Date().toISOString().split('T')[0];
+    const body = {
+      associatedAccountNumber: { value: carriers.fedex.accountNumber },
+      originDetail: {
+        pickupLocation: { contact: shipper.contact, address: shipper.address },
+        readyDateTimestamp: localTimestamp(date, ready, country, region),
+        customerCloseTime: `${close}:00`,
+        pickupDateType: date > today ? 'FUTURE_DAY' : 'SAME_DAY',
+        packageLocation: 'FRONT',
+      },
+      totalWeight: { units: 'LB', value: details.weight?.value || 1 },
+      packageCount: details.totalPackageCount || 1,
+      // FedEx Ground pickups are FDXG in the US only; in Canada FedEx Express collects Ground too.
+      carrierCode: country === 'US' && GROUND_SERVICES.has(shipResult.serviceType || details.serviceType) ? 'FDXG' : 'FDXE',
+      countryRelationships: country === (details.recipient?.address?.countryCode || country) ? 'DOMESTIC' : 'INTERNATIONAL',
+      ...(shipResult.carrierTrackingNumber && { trackingNumber: shipResult.carrierTrackingNumber }),
+      remarks: details.customerReference ? `IFF ref ${details.customerReference}` : undefined,
+    };
+    try {
+      const data = await httpsPost(`${getBaseUrl()}/pickup/v1/pickups`, JSON.stringify(body), {
+        Authorization: `Bearer ${await getToken()}`,
+        'Content-Type': 'application/json',
+        'X-locale': 'en_CA',
+      });
+      const code = data.output?.pickupConfirmationCode;
+      if (!code) throw new Error('FedEx returned no pickup confirmation');
+      const location = data.output?.location;
+      console.log(`[FEDEX-PICKUP] ${code}${location ? ` (${location})` : ''} for ${shipResult.carrierTrackingNumber}`);
+      return { scheduled: true, confirmationNumber: location ? `${location}-${code}` : code };
+    } catch (err) {
+      const fedexError = err.body?.errors?.[0] || {};
+      console.error('[FEDEX-PICKUP] Pickup request failed:', fedexError.code || err.message, fedexError.message || '');
+      // FedEx takes pickup requests only a business day or so ahead.
+      if (fedexError.code === 'PICKUPDATE.TOO.FAR') {
+        return { scheduled: false, message: 'FedEx only accepts pickup requests about one business day ahead. IFF will request the pickup closer to the pickup date.' };
+      }
+      return { scheduled: false, message: `FedEx couldn't schedule the pickup${fedexError.message ? ` (${fedexError.message.replace(/\.$/, '')})` : ''}. IFF will arrange it.` };
+    }
   }
 
   async _liveBookShipment(details) {
@@ -604,7 +726,6 @@ class FedExAdapter extends CarrierAdapter {
       battery: details.options?.battery,
       homeDeliveryDate: details.options?.homeDeliveryDate,
     });
-    if (!special) throw new Error('FedEx cannot provide the selected options on this shipment');
 
     const recipient = special.residential
       ? { ...details.recipient, address: { ...details.recipient.address, residential: true } }
@@ -642,7 +763,7 @@ class FedExAdapter extends CarrierAdapter {
         shipDatestamp: shipDate,
         serviceType: details.serviceType,
         packagingType,
-        pickupType: 'USE_SCHEDULED_PICKUP',
+        pickupType: details.requestPickup ? 'CONTACT_FEDEX_TO_SCHEDULE' : 'USE_SCHEDULED_PICKUP',
         shipper: details.shipper,
         // Ship API uses "recipients" (plural array), unlike Rate API's singular "recipient"
         recipients: [recipient],

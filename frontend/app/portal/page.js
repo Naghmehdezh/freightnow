@@ -107,10 +107,12 @@ export default function DashboardPage() {
     return s.statusPending;
   }
 
-  function getStatusLabel(status) {
-    if (status === 'delivered') return '● Delivered';
-    if (status === 'in_transit') return '↦ In transit';
-    return '○ Pending pickup';
+  function getStatusLabel(ship) {
+    if (ship.status === 'delivered') return '● Delivered';
+    if (ship.status === 'in_transit') return '↦ In transit';
+    if (ship.pickupStatus === 'scheduled') return '○ Awaiting pickup';
+    if (ship.pickupStatus === 'to_arrange') return '! Pickup to be arranged';
+    return '○ Booked';
   }
 
   function getBookingStatusClass(status) {
@@ -314,7 +316,7 @@ export default function DashboardPage() {
                     <td>{ship.carrier || ship.carrierName}</td>
                     <td>{ship.service || ship.serviceName}</td>
                     <td style={{ fontSize: '12px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{ship.date || ship.bookedAt?.split('T')[0]}</td>
-                    <td><span className={`${s.statusBadge} ${getStatusClass(ship.status)}`}>{getStatusLabel(ship.status)}</span></td>
+                    <td><span className={`${s.statusBadge} ${getStatusClass(ship.status)}`}>{getStatusLabel(ship)}</span></td>
                     <td>
                       {shipId && ship.labelDocType && (
                         <button

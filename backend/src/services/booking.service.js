@@ -16,17 +16,20 @@ const dhlAddr = require('./dhlAddressValidation.service');
 async function createBooking(userId, {
   quoteId, quoteRateId, customerReference, paymentMethodId,
   shipper, recipient, holdAtLocation, dangerousGoods,
-}) {
+}, { carrierBooking = true } = {}) { // carrierBooking: false for demo data (no carrier API call)
   const quote = await Quote.findOne({ _id: quoteId, user: userId }).populate('user');
   if (!quote) throw new NotFoundError('Quote');
-  if (quote.status === 'expired') throw new ValidationError('This quote has expired');
+  if (quote.status === 'expired' || (quote.expiresAt && quote.expiresAt < new Date())) {
+    throw new ValidationError('This quote has expired');
+  }
   if (quote.status === 'booked') throw new ValidationError('This quote has already been booked');
 
   const selectedRate = await QuoteRate.findOne({ _id: quoteRateId, quote: quote._id });
   if (!selectedRate) throw new NotFoundError('Rate');
 
   // Options quoted for this shipment that need more details at booking time.
-  const accessorials = parseAccessorials(quote.accessorials);
+  // Options the booked carrier couldn't include in its price don't apply to this booking.
+  const accessorials = parseAccessorials(quote.accessorials).filter(a => !(selectedRate.notIncludedOptions || []).includes(a));
   const isParcel = ['parcel', 'envelope'].includes(quote.shipmentType);
   if (accessorials.includes('hold_at_location') && selectedRate.carrierId === 'fedex' && !holdAtLocation) {
     throw new ValidationError('Choose the FedEx location where the shipment will be held.');
@@ -147,17 +150,20 @@ async function createBooking(userId, {
     });
 
     // Attempt real carrier booking (outside transaction — graceful degradation on failure)
-    try {
-      const carrierResult = await shipmentService.bookWithCarrier(
-        result.shipment, quote, selectedRate, company, bookingInput,
-      );
-      if (carrierResult) {
-        result.carrierTrackingNumber = carrierResult.carrierTrackingNumber;
-        result.label = carrierResult.label;
-        result.manualCarrierBooking = carrierResult.manualCarrierBooking;
+    if (carrierBooking) {
+      try {
+        const carrierResult = await shipmentService.bookWithCarrier(
+          result.shipment, quote, selectedRate, company, bookingInput,
+        );
+        if (carrierResult) {
+          result.carrierTrackingNumber = carrierResult.carrierTrackingNumber;
+          result.label = carrierResult.label;
+          result.manualCarrierBooking = carrierResult.manualCarrierBooking;
+        result.pickup = carrierResult.pickup;
+        }
+      } catch (err) {
+        console.error('[BOOKING] Carrier booking failed (using IFF tracking):', err.message);
       }
-    } catch (err) {
-      console.error('[BOOKING] Carrier booking failed (using IFF tracking):', err.message);
     }
 
     // Generate invoice (receipt for card customers, billable for monthly)

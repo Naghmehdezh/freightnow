@@ -1,11 +1,14 @@
 const https = require('https');
 const zlib = require('zlib');
 
-// XPO LTL has no separate sandbox: its guides list only production endpoints and say to test
-// against them. Rating and tracking are read-only, so this is safe; no BOL/pickup call exists here.
+// XPO LTL has no separate sandbox host: everything goes to the production endpoints. Rating and
+// tracking are read-only. The Bill of Lading API takes a mandatory testMode flag instead: with
+// testMode=Y the BOL (and its pickup request) goes to XPO's test system and never reaches a
+// service center, so no driver is dispatched. We send Y unless XPO_BOL_TEST_MODE=N.
 const AUTH_URL = 'https://api.xpo.com/token';
 const RATE_URL = 'https://api.ltl.xpo.com/rating/1.0/ratequotes';
 const TRACKING_BASE = 'https://api.ltl.xpo.com/tracking/1.0';
+const BOL_BASE = 'https://api.ltl.xpo.com/billoflading/1.0/billsoflading';
 
 // Auth is an OAuth2 "password" grant: the Basic header carries the consumer key/secret
 // (XPO_AUTH_KEY, already base64), the body carries the XPO LTL portal user. Rates are priced
@@ -17,8 +20,9 @@ function isConfigured() {
 }
 
 const REQUEST_TIMEOUT_MS = 20000;
+const BOL_TIMEOUT_MS = 45000; // creating a BOL with its pickup request can take longer
 
-function _request(method, url, headers, rawBody) {
+function _request(method, url, headers, rawBody, timeoutMs = REQUEST_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const bodyBuf = rawBody ? Buffer.from(rawBody) : null;
@@ -65,8 +69,8 @@ function _request(method, url, headers, rawBody) {
     });
 
     req.on('error', reject);
-    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      req.destroy(new Error(`XPO API request timed out after ${REQUEST_TIMEOUT_MS}ms`));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`XPO API request timed out after ${timeoutMs}ms`));
     });
     if (bodyBuf) req.write(bodyBuf);
     req.end();
@@ -110,11 +114,11 @@ function clearToken() {
   tokenExpiresAt = 0;
 }
 
-async function _authenticatedRequest(method, url, body) {
+async function _authenticatedRequest(method, url, body, timeoutMs) {
   const send = async () => _request(method, url, {
     Authorization: `Bearer ${await getToken()}`,
     ...(body && { 'Content-Type': 'application/json' }),
-  }, body ? JSON.stringify(body) : null);
+  }, body ? JSON.stringify(body) : null, timeoutMs);
 
   try {
     return await send();
@@ -142,4 +146,39 @@ function listTrackingEvents(pro) {
   return _authenticatedRequest('GET', `${TRACKING_BASE}/shipments/${encodeURIComponent(pro)}/tracking-events`);
 }
 
-module.exports = { isConfigured, getToken, clearToken, rateQuote, getShipmentStatus, listTrackingEvents };
+// ---------------------------------------------------------------------------
+// Bill of Lading (with pickup request) — see XPO_API_BOL_Guide.pdf
+// ---------------------------------------------------------------------------
+
+// Real BOLs only when explicitly switched on; anything else stays in XPO's test system.
+function bolTestMode() {
+  return (process.env.XPO_BOL_TEST_MODE || '').trim().toUpperCase() === 'N' ? 'N' : 'Y';
+}
+
+const bolUrl = (path = '') => `${BOL_BASE}${path}?testMode=${bolTestMode()}`;
+
+// createBillOfLading: body is { bol: {...}, autoAssignPro }. With bol.pickupInfo, XPO also
+// creates the pickup request. Returns data.bolInfo { bolInstId, pkupInstId, pkupTrmnlSic, ... }.
+function createBol(body) {
+  return _authenticatedRequest('POST', bolUrl(), body, BOL_TIMEOUT_MS);
+}
+
+// getBillOfLading: the stored BOL, including proNbr once XPO has assigned one.
+function getBol(bolInstId) {
+  return _authenticatedRequest('GET', bolUrl(`/${encodeURIComponent(bolInstId)}/requester`));
+}
+
+// cancelBillOfLading: cancels the BOL and its pickup request.
+function cancelBol(bolInstId) {
+  return _authenticatedRequest('PUT', bolUrl(`/${encodeURIComponent(bolInstId)}/cancel`), { bolInstId: String(bolInstId) });
+}
+
+// getBillOfLadingPdf: data.bolpdf { fileName, contentType (the PDF, base64) }.
+function getBolPdf(bolInstId) {
+  return _authenticatedRequest('GET', bolUrl(`/${encodeURIComponent(bolInstId)}/pdf`));
+}
+
+module.exports = {
+  isConfigured, getToken, clearToken, rateQuote, getShipmentStatus, listTrackingEvents,
+  bolTestMode, createBol, getBol, cancelBol, getBolPdf,
+};

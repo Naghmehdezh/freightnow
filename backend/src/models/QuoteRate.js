@@ -38,6 +38,11 @@ const quoteRateSchema = new Schema({
   // engine originally produced, so the adjustment stays visible and calibration can compare
   // achieved markup against the rules.
   engineRate: Number,
+  // The carrier's charge for each selected option (already included in baseRate / displayRate).
+  accessorialCharges: [{ _id: false, code: String, label: String, amount: Number }],
+  // Selected options this carrier couldn't include in its price (the rate is still bookable).
+  notIncludedOptions: [String],
+  notIncludedMessage: String,
   adjustedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   adjustedAt: Date,
   adjustmentReason: {

@@ -6,8 +6,8 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | Company | Packages | Envelopes | LTL | International | Domestic Canada | Domestic US | Cross Border (Canada <-> US) |
 |  | XPO |  |  | X |  | X | X | X |
-|  | Estes |  |  | X |  | X | X | X |
-|  | Polaris Transport |  |  | X |  | X |  | X |
+|  | Estes |  |  | X |  |  | X | X |
+|  | Polaris Transport |  |  | X |  |  |  | X |
 |  | Day & Ross |  |  | X |  | X |  |  |
 |  | DHL | X | X |  | X |  |  | X |
 |  | CSA Transport |  |  | X |  | X |  | X |

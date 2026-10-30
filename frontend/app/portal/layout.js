@@ -16,6 +16,9 @@ const PAGE_TITLES = {
   '/portal/profile': 'Profile',
   '/portal/billing': 'Billing',
   '/portal/admin/pricing': 'Pricing Admin',
+  '/portal/admin/spot-rates': 'Spot Rates',
+  '/portal/admin/guest-quotes': 'Guest Quote Requests',
+  '/portal/spot-rates': 'Spot-rate Requests',
 };
 
 export default function PortalLayout({ children }) {

@@ -4,6 +4,7 @@ const Booking = require('../models/Booking');
 const Claim = require('../models/Claim');
 const Invoice = require('../models/Invoice');
 const SpotRateRequest = require('../models/SpotRateRequest');
+const GuestQuoteRequest = require('../models/GuestQuoteRequest');
 
 async function generateTrackingNumber() {
   const year = new Date().getFullYear();
@@ -47,4 +48,10 @@ async function generateSpotRateNumber() {
   return `SPR-${year}-${seq}`;
 }
 
-module.exports = { generateTrackingNumber, generateQuoteNumber, generateBookingNumber, generateClaimNumber, generateInvoiceNumber, generateSpotRateNumber };
+async function generateGuestQuoteNumber() {
+  const year = new Date().getFullYear();
+  const count = await GuestQuoteRequest.countDocuments();
+  return `GQR-${year}-${String(count + 1).padStart(4, '0')}`;
+}
+
+module.exports = { generateGuestQuoteNumber, generateTrackingNumber, generateQuoteNumber, generateBookingNumber, generateClaimNumber, generateInvoiceNumber, generateSpotRateNumber };

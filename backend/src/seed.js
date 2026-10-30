@@ -200,7 +200,7 @@ async function main() {
   const { booking: xpoBooking } = await bookingService.createBooking(user._id.toString(), {
     quoteId: xpoQuote._id.toString(),
     quoteRateId: xpoRate._id.toString(),
-  });
+  }, { carrierBooking: false }); // demo data: never send a BOL to XPO
 
   await createHistoricalFixture('0008', '0007', { tracking: 'IFF-2026-00007', carrier: 'fedex', carrierName: 'FedEx', service: 'Express Saver', type: 'envelope', origCity: 'Toronto', origPostal: 'M5V3A8', origCountry: 'CA', destCity: 'Ottawa', destPostal: 'K1A0A9', destCountry: 'CA', weight: 0.5, pieces: 1, baseRate: 22.50, displayRate: 38.25, status: 'delivered', estDelivery: '2026-07-02', actualDelivery: '2026-07-02' });
 

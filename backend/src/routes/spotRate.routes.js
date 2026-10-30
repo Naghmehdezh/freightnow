@@ -6,28 +6,53 @@ const spotRateService = require('../services/spotRate.service');
 
 const router = Router();
 
+const place = z.object({
+  street: z.string().trim().optional(),
+  city: z.string().trim().optional(),
+  province: z.string().trim().optional(),
+  postalCode: z.string().trim().optional(),
+  country: z.string().length(2),
+}).refine(p => p.city || p.postalCode, { message: 'Enter a city' });
+
+// One group of identical pieces (e.g. 2 pieces of 20 × 30 × 40 cm).
+const packageGroup = z.object({
+  pieces: z.number().int().positive(),
+  length: z.number().positive(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  unit: z.enum(['cm', 'in']),
+});
+
+// FTL/PTL: weight (lb) + commodity/notes. Air: pickup or drop-off, total weight (kg) and a
+// dimension group per set of pieces. Ocean LCL: same as air; Ocean FCL: commodity/notes only.
 const spotRateSchema = z.object({
   shipmentType: z.enum(['ftl', 'air', 'ocean']),
-  origin: z.object({
-    city: z.string().optional(),
-    postalCode: z.string().optional(),
-    country: z.string().min(2),
-  }),
-  destination: z.object({
-    city: z.string().optional(),
-    postalCode: z.string().optional(),
-    country: z.string().min(2),
-  }),
-  originPort: z.string().optional(),
-  destPort: z.string().optional(),
-  oceanType: z.string().optional(),
+  airService: z.enum(['pickup', 'dropoff']).optional(),
+  oceanType: z.string().trim().optional(),
+  origin: place,
+  destination: place,
   weight: z.number().positive().optional(),
-  pieces: z.number().int().positive().optional(),
-  dimensions: z.string().optional(),
-  pickupDate: z.string().optional(),
+  weightUnit: z.enum(['lb', 'kg']).optional(),
+  skids: z.number().int().positive().max(60).optional(), // FTL / PTL
+  packages: z.array(packageGroup).max(50).optional(),
   commodity: z.string().optional(),
-  declaredValue: z.number().optional(),
   specialNotes: z.string().optional(),
+}).superRefine((d, ctx) => {
+  const need = (cond, path, message) => { if (!cond) ctx.addIssue({ code: 'custom', path: [path], message }); };
+  const isLcl = d.shipmentType === 'ocean' && /^LCL/i.test(d.oceanType || '');
+  if (d.shipmentType === 'ftl') {
+    need(d.weight, 'weight', 'Enter the total weight');
+    need(d.skids, 'skids', 'Enter the number of skids');
+  }
+  if (d.shipmentType === 'air') {
+    need(d.airService, 'airService', 'Choose pickup or drop-off');
+    if (d.airService === 'pickup') need(d.origin.street && d.origin.postalCode, 'origin', 'Pickup needs the full pickup address and postal code');
+  }
+  if (d.shipmentType === 'ocean') need(d.oceanType, 'oceanType', 'Choose the ocean service type');
+  if (d.shipmentType === 'air' || isLcl) {
+    need(d.weight, 'weight', 'Enter the total weight');
+    need(d.packages?.length, 'packages', 'Enter the dimensions of the pieces');
+  }
 });
 
 router.post('/', authenticate, validate(spotRateSchema), async (req, res, next) => {
@@ -56,7 +81,6 @@ router.get('/:id', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// TODO: once a staff-facing "price this spot rate" endpoint exists (PATCH /:id to set
-// quotedRate/quotedAt), gate it with requireRole(ROLES.IFF_STAFF, ROLES.IFF_ADMIN).
+// Staff pricing / declining lives in spotRateAdmin.routes.js (/api/admin/spot-rates).
 
 module.exports = router;

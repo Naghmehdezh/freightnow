@@ -524,3 +524,15 @@
 .btnAcceptSuggestion:hover {
   background: #d4920a;
 }
+
+/* Carrier left out because it can't provide a selected option */
+.unavailableCard { opacity: .65; background: var(--off-white); }
+.unavailableCard .riSvc { color: var(--text2); white-space: normal; }
+
+/* Selected options this carrier couldn't include in its price (still bookable) */
+.notIncluded { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber-border); border-radius: 6px; padding: 6px 10px; font-size: 11px; line-height: 1.5; margin-top: 8px; }
+/* Option choices shown as a list (signature / Home Delivery®) instead of a dropdown */
+.optionList { display: flex; flex-direction: column; gap: 6px; }
+.optionList .optionItem { display: flex; align-items: center; gap: 8px; border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 500; font-family: var(--body); color: var(--text); cursor: pointer; background: #fff; text-transform: none; letter-spacing: 0; }
+.optionList .optionItem input { appearance: auto; -webkit-appearance: radio; width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--navy); flex-shrink: 0; }
+.optionList .optionActive { border-color: var(--navy); background: var(--sky, #eef4fb); }

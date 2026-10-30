@@ -1,8 +1,14 @@
 const CarrierAdapter = require('./CarrierAdapter');
+const { OptionUnavailableError, titleCase } = require('./accessorials');
+const { expandUnits } = require('../utils/lineItems');
 const { addBusinessDays, formatDate } = require('../utils/dateHelpers');
+const { pickupWindow } = require('../utils/pickupWindow');
 const { getBaseUrl, getUserCredentials, httpsPost } = require('../services/dayrossApi.service');
 
 // Day & Ross status descriptions → IFF status mapping
+// aCharges lines that are part of every Day & Ross rate, not customer-selected options.
+const DAYROSS_STANDARD_CHARGES = ['FUEL', 'DOCSC', 'CWT', 'MIN', 'GST', 'HST', 'QST', 'PST'];
+
 const STATUS_MAP = {
   'pickup completed': 'in_transit',
   'in transit': 'in_transit',
@@ -34,6 +40,7 @@ class DayRossAdapter extends CarrierAdapter {
     try {
       return await this._getLiveRates(params);
     } catch (err) {
+      if (err instanceof OptionUnavailableError) throw err;
       console.error('[DAYROSS-RATE] Live rates failed:', err.message);
       return [];
     }
@@ -63,17 +70,24 @@ class DayRossAdapter extends CarrierAdapter {
     const totalWeight = weight || 500;
     const perPieceWeight = Math.round(totalWeight / numPieces);
 
+    // One detail per skid (max 20), each with its own dimensions, weight and class.
+    const units = params.lineItems?.length
+      ? expandUnits(params.lineItems, 20)
+      : Array.from({ length: Math.min(numPieces, 20) }, (_, i) => ({
+        length: dimL, width: dimW, height: dimH, freightClass,
+        weight: i === 0 ? totalWeight - perPieceWeight * (numPieces - 1) : perPieceWeight,
+      }));
     const detailEntries = [];
-    for (let i = 0; i < Math.min(numPieces, 20); i++) {
+    for (const u of units) {
       const entry = {
         description: commodity || 'General merchandise',
-        length: Math.round(dimL),
+        length: Math.round(u.length),
         lengthUnits: 'IN',
-        width: Math.round(dimW),
+        width: Math.round(u.width),
         widthUnits: 'IN',
-        height: Math.round(dimH),
+        height: Math.round(u.height),
         heightUnits: 'IN',
-        weight: i === 0 ? Math.round(totalWeight - perPieceWeight * (numPieces - 1)) : perPieceWeight,
+        weight: Math.round(u.weight),
         weightUnits: 'LB',
         pieces: 1,
         piecesUnits: 'PC',
@@ -83,8 +97,8 @@ class DayRossAdapter extends CarrierAdapter {
       };
 
       // Cross-border: commodity (freight class code) is mandatory
-      if (isCrossBorder && freightClass) {
-        entry.commodity = `CLASS${freightClass}`;
+      if (isCrossBorder && (u.freightClass || freightClass)) {
+        entry.commodity = `CLASS${u.freightClass || freightClass}`;
       } else if (isCrossBorder) {
         entry.commodity = 'CLASS70'; // default
       }
@@ -99,8 +113,8 @@ class DayRossAdapter extends CarrierAdapter {
       shipmentDetails: {
         billTo: 'C',
         serviceLevel: serviceLevels[0],
-        pickUpBy: `${shipDate}T08:00:00`,
-        pickUpByEnd: `${shipDate}T17:00:00`,
+        pickUpBy: `${shipDate}T${pickupWindow(params).ready}:00`,
+        pickUpByEnd: `${shipDate}T${pickupWindow(params).close}:00`,
         shipper: {
           city: origin.city || '',
           postalCode: origin.postalCode || '',
@@ -130,10 +144,16 @@ class DayRossAdapter extends CarrierAdapter {
 
     const url = `${getBaseUrl()}/GetRate`;
     const raw = await httpsPost(url, JSON.stringify(body));
-    return this._parseRateResponse(raw, shipDate);
+    const rates = this._parseRateResponse(raw, shipDate, (accessorials || []).length > 0);
+    // Day & Ross answers "Unable to rate shipment" when it can't price a requested option online.
+    const msg = (raw.GetRateResponse || [raw])[0]?.message || '';
+    if (!rates.length && accessorials?.length && /unable to rate/i.test(msg)) {
+      throw new OptionUnavailableError("Day & Ross couldn't price the selected options online.", null);
+    }
+    return rates;
   }
 
-  _parseRateResponse(raw, shipDate) {
+  _parseRateResponse(raw, shipDate, withAccessorials = false) {
     // Day & Ross wraps responses: { GetRateResponse: [ {...} ] }
     const rateItems = raw.GetRateResponse || [raw];
     const items = Array.isArray(rateItems) ? rateItems : [rateItems];
@@ -152,10 +172,22 @@ class DayRossAdapter extends CarrierAdapter {
         ? item.estimatedDeliveryDate.split('T')[0]
         : formatDate(addBusinessDays(baseDate, transitDays));
 
+      // `charges` is freight only; `totalCharges` is what Day & Ross bills — freight, fuel,
+      // accessorials and tax — so that's the price.
+      const total = item.totalCharges || charges;
+      // aCharges also carries the standard lines (fuel, invoice fee, per-cwt); the rest are the
+      // requested options (Day & Ross may return them under its own code, e.g. LTDADL for PRESDL).
+      const accessorialCharges = withAccessorials
+        ? (item.aCharges || [])
+          .filter(c => !DAYROSS_STANDARD_CHARGES.includes(c.aChargeCode) && c.chargeAmount > 0)
+          .map(c => ({ code: c.aChargeCode, label: titleCase(c.description || c.aChargeCode), amount: c.chargeAmount }))
+        : [];
+
       rates.push({
         serviceName,
         serviceCode: serviceLevel,
-        rate: Math.round(charges * 100) / 100,
+        rate: Math.round(total * 100) / 100,
+        accessorialCharges,
         transitDays,
         deliveryDate,
         isLive: true,
@@ -246,8 +278,8 @@ class DayRossAdapter extends CarrierAdapter {
       shipmentDetails: {
         billTo: 'C',
         serviceLevel,
-        pickUpBy: `${shipDate}T08:00:00`,
-        pickUpByEnd: `${shipDate}T17:00:00`,
+        pickUpBy: `${shipDate}T${pickupWindow(details).ready}:00`,
+        pickUpByEnd: `${shipDate}T${pickupWindow(details).close}:00`,
         shipper: {
           name: (shipperContact.companyName || shipperContact.personName || 'Shipper').substring(0, 40),
           address1: ((shipperAddr.streetLines || [])[0] || shipperAddr.city || 'N/A').substring(0, 40),
@@ -278,6 +310,11 @@ class DayRossAdapter extends CarrierAdapter {
         details: detailEntries,
       },
     };
+
+    // The options the customer was quoted for (minus any Day & Ross couldn't include), as the
+    // same aCharge codes the rate request sent.
+    const aCharges = this._mapAccessorials(details.accessorials || []);
+    if (aCharges.length > 0) body.shipmentDetails.aCharges = aCharges;
 
     // PO / reference numbers
     if (details.customerReference) {
@@ -407,7 +444,7 @@ class DayRossAdapter extends CarrierAdapter {
       limited_access_pickup: 'LTDAPU',
       limited_access_delivery: 'LTDADL',
       hazmat: 'HAZMAT',
-      signature: 'CHAIN',             // chain of signature
+      in_bond: 'INBOND',
       saturday: null,                  // no direct Day & Ross equivalent
     };
 

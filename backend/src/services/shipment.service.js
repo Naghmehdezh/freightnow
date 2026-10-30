@@ -1,4 +1,5 @@
 const Shipment = require('../models/Shipment');
+const Booking = require('../models/Booking');
 const TrackingEvent = require('../models/TrackingEvent');
 const { getCarrier } = require('../carriers');
 const { generateTrackingNumber } = require('../utils/trackingGenerator');
@@ -90,7 +91,26 @@ async function getUserShipments(userId, { status, page = 1, limit = 10, search }
     Shipment.countDocuments(where),
   ]);
 
+  await _refreshStale(shipments);
   return { shipments, pagination: { page, limit, total } };
+}
+
+// Bring the listed shipments' statuses up to date with the carriers: only shipments not yet
+// delivered, not checked in the last 30 minutes, at most 10 per page and 8 seconds in total
+// (the page shows the saved status for any the carriers don't answer in time).
+const REFRESH_AFTER_MS = 30 * 60 * 1000;
+const REFRESH_MAX = 10;
+const REFRESH_BUDGET_MS = 8000;
+
+async function _refreshStale(shipments) {
+  const { refreshFromCarrier } = require('./tracking.service');
+  const stale = shipments.filter(s => s.carrierTrackingNumber && s.status !== 'delivered'
+    && (!s.lastTrackedAt || Date.now() - new Date(s.lastTrackedAt) > REFRESH_AFTER_MS)).slice(0, REFRESH_MAX);
+  if (!stale.length) return;
+  await Promise.race([
+    Promise.allSettled(stale.map(s => refreshFromCarrier(s))), // updates each listed shipment in place
+    new Promise(resolve => setTimeout(resolve, REFRESH_BUDGET_MS)),
+  ]);
 }
 
 async function getShipmentById(shipmentId, userId) {
@@ -113,7 +133,7 @@ async function bookWithCarrier(shipment, quote, selectedRate, company, input = {
   // Fully regulated dangerous goods (and the small quantity exception) on a parcel need a
   // DG-approved carrier account and a signed shipper's declaration, so IFF staff finish the
   // carrier booking. Lithium batteries (Section II) are booked automatically.
-  const accessorials = _parseAccessorials(quote.accessorials);
+  const accessorials = _bookedAccessorials(quote, selectedRate);
   if (['parcel', 'envelope'].includes(quote.shipmentType) && accessorials.includes('hazmat')
       && quote.options?.dgType !== 'BATTERY') {
     const manualCarrierBooking = {
@@ -157,10 +177,27 @@ async function bookWithCarrier(shipment, quote, selectedRate, company, input = {
 
   await Shipment.updateOne({ _id: shipment._id }, update);
 
+  // Pickup booked with the carrier: keep its confirmation on the booking. When the carrier
+  // couldn't schedule it, staff see why in the tracking history and arrange it themselves.
+  const pickup = result.pickup || null;
+  if (pickup) await Shipment.updateOne({ _id: shipment._id }, { pickupStatus: pickup.scheduled ? 'scheduled' : 'to_arrange' });
+  if (pickup?.scheduled && shipment.booking) {
+    await Booking.updateOne({ _id: shipment.booking }, { pickupConfirmationNumber: pickup.confirmationNumber, pickupConfirmedAt: new Date() });
+  } else if (pickup && !pickup.scheduled) {
+    await TrackingEvent.create({
+      shipment: shipment._id,
+      event: 'Pickup to be arranged',
+      location: quote.originCity || quote.originPostal,
+      timestamp: new Date(),
+      description: pickup.message,
+    });
+  }
+
   return {
     carrierTrackingNumber: result.carrierTrackingNumber,
     label: result.label || null,
     serviceType: result.serviceType,
+    pickup,
   };
 }
 
@@ -194,12 +231,18 @@ function _parseAccessorials(raw) {
   try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
 
+// The quote's options minus any the booked carrier couldn't include in its price.
+function _bookedAccessorials(quote, selectedRate) {
+  const notIncluded = selectedRate?.notIncludedOptions || [];
+  return _parseAccessorials(quote.accessorials).filter(a => !notIncluded.includes(a));
+}
+
 function _buildCarrierDetails(quote, selectedRate, company, input = {}) {
   const shipDate = quote.pickupDate || new Date().toISOString().split('T')[0];
   const originCountry = (quote.originCountry || 'CA').toUpperCase();
   const destCountry = (quote.destCountry || 'US').toUpperCase();
   const isInternational = originCountry !== destCountry;
-  const accessorials = _parseAccessorials(quote.accessorials);
+  const accessorials = _bookedAccessorials(quote, selectedRate);
 
   const shipper = _shipperParty(input.shipper, company, quote);
 
@@ -223,6 +266,12 @@ function _buildCarrierDetails(quote, selectedRate, company, input = {}) {
 
   const details = {
     shipDatestamp: shipDate,
+    // Ask the carrier to collect it: always for LTL; for parcels and envelopes only with the
+    // Pickup option (otherwise it's dropped off or goes with a regular pickup). Test scripts
+    // build their own details and leave this off.
+    requestPickup: quote.shipmentType === 'ltl' || accessorials.includes('pickup'),
+    pickupReadyTime: quote.pickupReadyTime,
+    pickupCloseTime: quote.pickupCloseTime,
     serviceType: selectedRate.serviceCode || null,
     packagingType: quote.options?.fedexPackaging || 'YOUR_PACKAGING',
     // The options the customer was quoted for — each carrier adapter maps them to its own codes.
@@ -232,6 +281,7 @@ function _buildCarrierDetails(quote, selectedRate, company, input = {}) {
       dgType: quote.options?.dgType,
       battery: quote.options?.battery?.material ? quote.options.battery : undefined,
       homeDeliveryDate: quote.options?.homeDeliveryDate,
+      limitedAccessType: quote.options?.limitedAccessType,
     },
     ...(input.holdAtLocation && { holdAtLocation: input.holdAtLocation }),
     shipper,
@@ -241,6 +291,9 @@ function _buildCarrierDetails(quote, selectedRate, company, input = {}) {
     customerReference: quote.quoteNumber,
     totalPackageCount: quote.pieces || 1,
     commodity: quote.commodity || null,
+    // LTL: groups of identical pieces (in, lb per piece, freight class) for per-line BOLs.
+    ...(quote.lineItems?.length && { lineItems: quote.lineItems.map(i => ({ pieces: i.pieces, length: i.length, width: i.width, height: i.height, weight: i.weight, freightClass: i.freightClass })) }),
+    freightClass: quote.freightClass || null,
   };
 
   if (quote.dimL && quote.dimW && quote.dimH) {

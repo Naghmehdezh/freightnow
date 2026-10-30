@@ -14,11 +14,11 @@ const shipmentSchema = new Schema({
   shipmentType: { type: String, required: true },
   originCity: String,
   originProvince: String,
-  originPostal: { type: String, required: true },
+  originPostal: String, // optional: spot-rate quotes (air/ocean) may only have a port
   originCountry: { type: String, required: true },
   destCity: String,
   destProvince: String,
-  destPostal: { type: String, required: true },
+  destPostal: String, // optional: spot-rate quotes (air/ocean) may only have a port
   destCountry: { type: String, required: true },
   weight: { type: Number, required: true },
   pieces: { type: Number, required: true },
@@ -44,9 +44,12 @@ const shipmentSchema = new Schema({
   manualCarrierBooking: { required: Boolean, reason: String },
   labelBase64: String, // base64-encoded shipping label from carrier
   labelDocType: String, // PDF, PNG, ZPLII
-  status: { type: String, default: 'pending' },
+  status: { type: String, default: 'pending' }, // pending → in_transit → delivered (from carrier tracking)
   estimatedDelivery: String,
   actualDelivery: String,
+  lastTrackedAt: Date, // last time the carrier was asked for this shipment's status
+  // Pickup with the carrier: 'scheduled' (carrier confirmed it) or 'to_arrange' (IFF must book it).
+  pickupStatus: { type: String, enum: ['scheduled', 'to_arrange'] },
 }, { timestamps: { createdAt: 'bookedAt', updatedAt: 'updatedAt' } });
 
 module.exports = mongoose.model('Shipment', shipmentSchema);

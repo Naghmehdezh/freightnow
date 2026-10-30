@@ -1,7 +1,10 @@
 const CarrierAdapter = require('./CarrierAdapter');
 const { addBusinessDays, formatDate } = require('../utils/dateHelpers');
+const { pickupWindow } = require('../utils/pickupWindow');
+const { timeZoneFor, utcOffset } = require('../utils/timeZones');
 const { getBaseUrl, httpsGet, httpsPost } = require('../services/dhlApi.service');
 const { carriers } = require('../config/env');
+const { SUPPORT, OptionUnavailableError, titleCase, labelFor } = require('./accessorials');
 
 // DHL product code → friendly service name
 const PRODUCT_NAME_MAP = {
@@ -29,48 +32,106 @@ class DHLAdapter extends CarrierAdapter {
     try {
       return await this._getLiveRates(params);
     } catch (err) {
+      if (err instanceof OptionUnavailableError) throw err;
       console.error('[DHL-RATE] Live rates failed:', err.message);
       return [];
     }
   }
 
+  // App options → DHL value-added service codes (from IFF's account's service list).
+  _valueAddedServices(params) {
+    const accessorials = params.accessorials || [];
+    const codes = [];
+    for (const option of accessorials) {
+      if (option === 'pickup') continue; // requested with the booking, not priced as a service
+      if (option === 'hazmat') codes.push(this._dgCode(params));
+      else if (SUPPORT.dhl[option]) codes.push(SUPPORT.dhl[option]);
+    }
+    const vas = [...new Set(codes.filter(Boolean))].map(serviceCode => ({ serviceCode }));
+    // Declared value → DHL shipment insurance (Shipment Value Protection).
+    if (params.declaredValue > 0) {
+      vas.push({ serviceCode: 'II', value: params.declaredValue, currency: params.currency || 'CAD' });
+    }
+    return vas;
+  }
+
+  // App option ids behind DHL codes (declared value isn't an option — it's dropped separately).
+  _optionsFor(codes, params) {
+    const ids = [];
+    for (const code of codes) {
+      if (code === this._dgCode(params)) ids.push('hazmat');
+      else ids.push(...Object.keys(SUPPORT.dhl).filter(o => SUPPORT.dhl[o] === code));
+    }
+    return ids;
+  }
+
+  _optionLabel(code, params) {
+    if (code === 'II') return 'Declared value';
+    if (code === this._dgCode(params)) return 'Dangerous goods';
+    const option = Object.keys(SUPPORT.dhl).find(o => SUPPORT.dhl[o] === code);
+    return option ? labelFor(option) : code;
+  }
+
+  _dgCode({ dgType, battery }) {
+    if (dgType === 'BATTERY') {
+      const metal = battery?.material === 'LITHIUM_METAL';
+      const packed = battery?.packing === 'PACKED_WITH_EQUIPMENT';
+      // IATA Section II packing instructions: ion PI966/PI967, metal PI969/PI970.
+      return metal ? (packed ? 'HM' : 'HW') : (packed ? 'HD' : 'HV');
+    }
+    if (dgType === 'SMALL_QUANTITY_EXCEPTION') return 'HH'; // excepted quantities
+    return 'HE'; // fully regulated dangerous goods
+  }
+
   async _getLiveRates(params) {
-    const { shipmentType, origin, destination, weight, pieces, dimensions, pickupDate } = params;
+    const { origin, destination, weight, pieces, dimensions, pickupDate } = params;
     const accountNumber = carriers.dhl.accountNumber;
 
     const shipDate = pickupDate || new Date().toISOString().split('T')[0];
     const isIntl = (origin.country || 'CA') !== (destination.country || 'US');
+    const valueAddedServices = this._valueAddedServices(params);
 
-    const queryParams = new URLSearchParams({
-      accountNumber,
-      originCountryCode: origin.country || 'CA',
-      originCityName: origin.city || 'MONTREAL',
-      destinationCountryCode: destination.country || 'US',
-      destinationCityName: destination.city || 'NEW YORK',
-      weight: String(weight || 1),
-      plannedShippingDate: shipDate,
-      isCustomsDeclarable: String(isIntl),
-      unitOfMeasurement: 'imperial',
-      numberOfPieces: String(pieces || 1),
+    // POST /rates (not GET) so the selected options can be priced as value-added services.
+    const party = (p, fallbackCity) => ({
+      ...(p.postalCode && { postalCode: String(p.postalCode).replace(/\s+/g, '') }),
+      cityName: p.city || fallbackCity,
+      countryCode: p.country || 'CA',
     });
+    const body = {
+      customerDetails: { shipperDetails: party(origin, 'MONTREAL'), receiverDetails: party(destination, 'NEW YORK') },
+      accounts: [{ typeCode: 'shipper', number: accountNumber }],
+      plannedShippingDateAndTime: `${shipDate}T${pickupWindow(params).ready}:00GMT${utcOffset(timeZoneFor(origin.country, origin.province), shipDate)}`,
+      unitOfMeasurement: 'imperial',
+      isCustomsDeclarable: isIntl,
+      ...(isIntl && { monetaryAmount: [{ typeCode: 'declaredValue', value: params.declaredValue || 100, currency: params.currency || 'CAD' }] }),
+      ...(valueAddedServices.length && { valueAddedServices }),
+      nextBusinessDay: true,
+      // DHL requires dimensions — use provided or sensible defaults
+      packages: Array.from({ length: Math.min(pieces || 1, 50) }, () => ({
+        weight: (weight || 1) / (pieces || 1),
+        dimensions: {
+          length: Math.round(dimensions?.length || 12),
+          width: Math.round(dimensions?.width || 12),
+          height: Math.round(dimensions?.height || 12),
+        },
+      })),
+    };
 
-    if (origin.postalCode) queryParams.set('originPostalCode', origin.postalCode);
-    if (destination.postalCode) queryParams.set('destinationPostalCode', destination.postalCode);
-
-    // DHL requires dimensions — use provided or sensible defaults
-    const dimL = (dimensions && dimensions.length) || 12;
-    const dimW = (dimensions && dimensions.width) || 12;
-    const dimH = (dimensions && dimensions.height) || 12;
-    queryParams.set('length', String(Math.round(dimL)));
-    queryParams.set('width', String(Math.round(dimW)));
-    queryParams.set('height', String(Math.round(dimH)));
-
-    const url = `${getBaseUrl()}/rates?${queryParams.toString()}`;
-    const data = await httpsGet(url);
-    return this._parseRateResponse(data, shipDate);
+    const data = await httpsPost(`${getBaseUrl()}/rates`, JSON.stringify(body));
+    const requested = valueAddedServices.map(v => v.serviceCode);
+    const rates = this._parseRateResponse(data, shipDate, requested);
+    if (requested.length && !rates.length && (data.products || []).length) {
+      // Name the options no DHL product on this lane offers.
+      const offered = new Set((data.products || []).flatMap(p => (p.detailedPriceBreakdown || []).flatMap(b => (b.breakdown || []).map(i => i.serviceCode))));
+      const missingCodes = requested.filter(c => !offered.has(c));
+      const labels = [...new Set(missingCodes.map(c => this._optionLabel(c, params)))];
+      const options = missingCodes.length ? this._optionsFor(missingCodes, params) : null;
+      throw new OptionUnavailableError(`DHL doesn't offer ${labels.length ? labels.join(', ') : 'the selected options'} on this lane.`, options);
+    }
+    return rates;
   }
 
-  _parseRateResponse(data, shipDate) {
+  _parseRateResponse(data, shipDate, requested = []) {
     const products = data.products || [];
     if (products.length === 0) {
       console.warn('[DHL-RATE] No products returned');
@@ -84,14 +145,24 @@ class DHLAdapter extends CarrierAdapter {
         || PRODUCT_NAME_MAP[productCode]
         || productCode;
 
-      // Get total price (prefer first currency match)
-      const priceEntry = (product.totalPrice || [])[0];
+      // Total in the billing currency (BILLC) when DHL gives several.
+      const priceEntry = (product.totalPrice || []).find(p => p.currencyType === 'BILLC') || (product.totalPrice || [])[0];
       if (!priceEntry || priceEntry.price == null) continue;
 
       const rate = typeof priceEntry.price === 'number'
         ? priceEntry.price
         : parseFloat(priceEntry.price);
       if (isNaN(rate) || rate <= 0) continue; // skip $0 sandbox placeholders
+
+      // DHL leaves a requested service off a product that can't do it (rather than refusing),
+      // so only keep products whose breakdown includes every requested service.
+      const breakdown = ((product.detailedPriceBreakdown || []).find(b => b.currencyType === priceEntry.currencyType)
+        || (product.detailedPriceBreakdown || [])[0])?.breakdown || [];
+      const included = new Set(breakdown.map(i => i.serviceCode).filter(Boolean));
+      if (!requested.every(code => included.has(code))) continue;
+      const accessorialCharges = breakdown
+        .filter(i => requested.includes(i.serviceCode) && Number(i.price) > 0)
+        .map(i => ({ code: i.serviceCode, label: titleCase(i.name || i.serviceCode), amount: Number(i.price) }));
 
       // Extract delivery date and transit time
       let deliveryDate = null;
@@ -127,6 +198,7 @@ class DHLAdapter extends CarrierAdapter {
         serviceName,
         serviceCode: productCode,
         rate: Math.round(rate * 100) / 100,
+        accessorialCharges,
         // DHL states the currency of each price; carried through so it's never mislabelled.
         ...(priceEntry.priceCurrency && { currency: priceEntry.priceCurrency }),
         transitDays,
@@ -245,9 +317,15 @@ class DHLAdapter extends CarrierAdapter {
     const isIntl = originCountry !== destCountry;
     const contentDesc = details.commodity || details.customerReference || 'General merchandise';
 
+    // Ready time at the pickup address, in its own UTC offset (DHL: "...T09:00:00GMT-05:00").
+    const { ready, close } = pickupWindow(details);
+    const offset = utcOffset(timeZoneFor(originCountry, details.shipper?.address?.stateOrProvinceCode), shipDate);
     const body = {
-      plannedShippingDateAndTime: `${shipDate}T10:00:00 GMT+00:00`,
-      pickup: { isRequested: false },
+      plannedShippingDateAndTime: `${shipDate}T${ready}:00GMT${offset}`,
+      // App bookings ask DHL to collect it in the customer's window (scripts only create labels).
+      pickup: details.requestPickup
+        ? { isRequested: true, closeTime: close, location: 'reception' }
+        : { isRequested: false },
       productCode: details.serviceType || details.productCode || 'P',
       accounts: [
         { typeCode: 'shipper', number: accountNumber },
@@ -319,12 +397,21 @@ class DHLAdapter extends CarrierAdapter {
       };
     }
 
+    // The pickup's dispatch confirmation (e.g. "AME261103000164"); also cancelPickupUrl.
+    const dispatch = data.dispatchConfirmationNumber || data.dispatchConfirmationNumbers?.[0];
+    if (details.requestPickup) console.log(`[DHL-PICKUP] ${dispatch || 'no dispatch number returned'} for ${trackingNumber}`);
+
     return {
       carrierTrackingNumber: trackingNumber,
-      confirmationNumber: trackingNumber,
+      confirmationNumber: dispatch || trackingNumber,
       status: 'confirmed',
       label,
       serviceType: data.productCode,
+      ...(details.requestPickup && {
+        pickup: dispatch
+          ? { scheduled: true, confirmationNumber: dispatch }
+          : { scheduled: false, message: "DHL didn't confirm a pickup for this shipment. IFF will arrange it." },
+      }),
       rawResponse: data,
     };
   }

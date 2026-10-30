@@ -51,3 +51,6 @@ xpo_test_output/
 
 # FedEx ETD sample documents (test scripts)
 backend/src/scripts/fedex_etd_samples/
+
+# Carrier API documents and onboarding emails (contain credentials) — keep out of git
+APIs/

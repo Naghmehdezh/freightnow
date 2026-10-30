@@ -23,3 +23,4 @@
 .btnCancel:hover { border-color: var(--navy); }
 .btnConfirm { flex: 2; height: 42px; background: var(--navy); border: none; border-radius: 8px; font-family: var(--display); font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; }
 .btnConfirm:hover { background: var(--navy-dark); }
+.notIncluded { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber-border); border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.5; margin-top: 12px; }

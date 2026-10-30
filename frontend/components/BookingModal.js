@@ -9,22 +9,27 @@ import s from './BookingModal.module.css';
 // location for Hold at Location, and dangerous goods details. Calls onConfirm(payload) with
 // the extra fields for POST /api/bookings.
 export default function BookingModal({ rate, request, onCancel, onConfirm }) {
-  const accessorials = request?.accessorials || [];
+  // Options this carrier can't provide aren't part of its price, so they don't apply to this booking.
+  const notIncluded = rate.notIncluded?.options || [];
+  const accessorials = (request?.accessorials || []).filter(a => !notIncluded.includes(a));
   const isParcel = ['parcel', 'envelope'].includes(request?.shipmentType);
   const needsHoldLocation = accessorials.includes('hold_at_location') && rate.carrier.id === 'fedex';
   const needsDg = isParcel && accessorials.includes('hazmat') && request?.dgType !== 'BATTERY';
   const origin = request?.origin || {};
   const dest = request?.destination || {};
 
-  const [shipper, setShipper] = useState({ contactName: '', companyName: '', phone: '', street1: '', street2: '' });
-  const [recipient, setRecipient] = useState({ contactName: '', companyName: '', phone: '', email: '', street1: '', street2: '' });
+  // Streets come from the addresses searched on the quote form; the unit (e.g. #1115) goes on line 2.
+  const unitLine = u => (u ? `Unit ${u}` : '');
+  const [shipper, setShipper] = useState({ contactName: '', companyName: '', phone: '', street1: origin.street || '', street2: unitLine(origin.unit) });
+  const [recipient, setRecipient] = useState({ contactName: '', companyName: '', phone: '', email: '', street1: dest.street || '', street2: unitLine(dest.unit) });
   const [dg, setDg] = useState({ unNumber: '', properShippingName: '', hazardClass: '', packingGroup: '', quantity: '', units: 'L', emergencyPhone: '' });
   const [locations, setLocations] = useState(null); // null = loading
   const [locationError, setLocationError] = useState('');
   const [holdLocation, setHoldLocation] = useState(null);
   const [error, setError] = useState('');
 
-  // Pre-fill the shipper from the user's profile / company.
+  // Pre-fill the shipper contact from the user's profile / company. The company's street is only
+  // a fallback when the quote's pickup address had no street.
   useEffect(() => {
     fetchAPI('/api/profile').then((p) => {
       setShipper(prev => ({
@@ -88,11 +93,19 @@ export default function BookingModal({ rate, request, onCancel, onConfirm }) {
           </div>
         </div>
 
+        {rate.notIncluded && (
+          <div className={s.notIncluded}>
+            <b>Not included in this price: {rate.notIncluded.labels.join(', ')}.</b> {rate.notIncluded.message}
+            {' '}You can still book; contact IFF if you need {rate.notIncluded.labels.length > 1 ? 'these services' : 'this service'}.
+          </div>
+        )}
+
         <div className={s.section}>Pickup from <span className={s.place}>{place(origin)}</span></div>
         <div className="grid2">
           <div className="field"><label>Contact name *</label><input value={shipper.contactName} onChange={setS('contactName')} /></div>
           <div className="field"><label>Company</label><input value={shipper.companyName} onChange={setS('companyName')} /></div>
           <div className="field"><label>Street address *</label><input value={shipper.street1} onChange={setS('street1')} /></div>
+          <div className="field"><label>Apt / suite / unit</label><input value={shipper.street2} onChange={setS('street2')} /></div>
           <div className="field"><label>Phone *</label><input type="tel" value={shipper.phone} onChange={setS('phone')} /></div>
         </div>
 

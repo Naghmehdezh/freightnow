@@ -1,0 +1,19 @@
+.wrap { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; background: #fff; }
+.head { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text2); margin-bottom: 10px; }
+.head span { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text3); margin-left: 8px; }
+.group { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--off-white); }
+.groupTop { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.unitLabel { font-size: 11px; color: var(--text3); margin-right: 2px; }
+.unitBtn { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 700; color: var(--text2); cursor: pointer; }
+.unitActive { background: var(--navy); border-color: var(--navy); color: #fff; }
+.remove { margin-left: auto; border: none; background: none; font-size: 18px; line-height: 1; color: var(--text3); cursor: pointer; }
+.remove:hover { color: var(--red); }
+.row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.groupFoot { font-size: 11px; color: var(--text3); margin-top: 6px; }
+.groupFoot b, .totals b { color: var(--text); font-family: var(--mono); }
+.add { width: 100%; border: 1.5px dashed var(--border); background: #fff; border-radius: 8px; padding: 9px; font-size: 13px; font-weight: 600; color: var(--navy); cursor: pointer; text-align: left; }
+.add:hover { border-color: var(--navy); }
+.totals { font-size: 12px; color: var(--text3); margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+@media (max-width: 600px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.row6 { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 800px) { .row6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

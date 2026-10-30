@@ -175,7 +175,7 @@ Reasons that hold up given how this app is actually used:
 |-------|---------------|
 | **Quote** | quoteNumber, shipmentType, origin/dest (city, postal, country), weight, pieces, dimensions, freightClass, currency, pickupDate, declaredValue, commodity, accessorials, status, expiresAt |
 | **QuoteRate** | One doc per carrier result — quote (ref), carrierId, carrierName, serviceName, baseRate (cost), displayRate (marked up), transitDays, estimatedDelivery, isLiveRate, isBestRate |
-| **SpotRateRequest** | For FTL/air/ocean quotes needing manual pricing — requestNumber, shipment details, origin/dest ports (ocean), commodity, specialNotes, status, quotedRate, quotedAt |
+| **SpotRateRequest** | For FTL/air/ocean quotes needing manual pricing — requestNumber, shipment details, origin/dest ports (ocean), commodity, specialNotes, status (`pending`/`quoted`/`declined`/`booked`), staff pricing (quotedRate, carrierCost, carrier, validUntil, notes) and the Quote/QuoteRate created for booking |
 
 ### Shipping
 | Collection | What it stores |
@@ -259,7 +259,10 @@ Quote → Booking (one-to-one, when booked) → Shipment (one-to-one, once carri
 | `GET /api/billing/stats` | Spending stats (month/year) |
 | `GET /api/billing/invoices` | Invoice history |
 | `GET/PUT /api/profile` | User profile management |
-| `POST /api/spot-rates` | Submit spot rate request (FTL/air/ocean) |
+| `POST /api/spot-rates` | Submit spot rate request (FTL/air/ocean); `GET /api/spot-rates` lists the user's requests with IFF's price once quoted |
+| `GET /api/admin/spot-rates` | IFF staff/admin: spot-rate requests (`?status=pending\|quoted\|booked\|expired\|declined\|all`) |
+| `POST /api/admin/spot-rates/:id/quote` | IFF staff/admin: price a request — creates a Quote + one "IFF Cargo" QuoteRate the customer books via `/api/bookings` |
+| `POST /api/admin/spot-rates/:id/decline` | IFF staff/admin: decline a request |
 | `POST /api/fedex-account` | Start a FedEx account connection (EULA acceptance + Factor 1: account number/address) |
 | `GET /api/fedex-account` | List the user's connected FedEx accounts |
 | `POST /api/fedex-account/:id/factor2/start` | Choose Factor 2 method (PIN via email/SMS/call, or invoice) and send/prepare it |

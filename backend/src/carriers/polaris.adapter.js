@@ -1,5 +1,8 @@
 const CarrierAdapter = require('./CarrierAdapter');
+const { titleCase } = require('./accessorials');
+const { expandUnits } = require('../utils/lineItems');
 const { addBusinessDays, formatDate } = require('../utils/dateHelpers');
+const { pickupWindow } = require('../utils/pickupWindow');
 const { detectScope } = require('../utils/shipmentScope');
 const { trace: polarisTrace, rate: polarisRate, createOrder: polarisCreateOrder } = require('../services/polarisApi.service');
 
@@ -13,6 +16,11 @@ class PolarisAdapter extends CarrierAdapter {
   get isLive() { return !!process.env.POLARIS_API_KEY; }
 
   // ─── getRates ─────────────────────────────────────────────────
+
+  // Polaris's rate API is used for cross-border lanes only.
+  canQuote(params) {
+    return detectScope(params.origin?.country, params.destination?.country) === 'xb';
+  }
 
   async getRates(params) {
     // Polaris is LTL-only, and only cross-border (CA<->US) for live rating.
@@ -46,7 +54,12 @@ class PolarisAdapter extends CarrierAdapter {
         ...(freightClass && { Class: String(freightClass) }),
         ...(pickupDate && { Pickup_Date: pickupDate }),
         ShipInstructions: this._mapAccessorials(accessorials),
-        SkidDimensions: [{ Skid: 1, Length: Math.round(dimL), Width: Math.round(dimW), Height: Math.round(dimH) }],
+        // Polaris needs one entry per skid ("PALLET COUNT AND NUMBER OF SKID DIMENSIONS NEED TO
+        // MATCH"). Polaris takes the total weight only, not a weight per skid.
+        SkidDimensions: (params.lineItems?.length
+          ? expandUnits(params.lineItems)
+          : Array.from({ length: numSkids }, () => ({ length: dimL, width: dimW, height: dimH })))
+          .map((u, i) => ({ Skid: i + 1, Length: Math.round(u.length), Width: Math.round(u.width), Height: Math.round(u.height) })),
       },
     };
 
@@ -59,18 +72,18 @@ class PolarisAdapter extends CarrierAdapter {
     // rest (hazmat/saturday/signature) have no equivalent on this endpoint.
     const has = (code) => accessorials.includes(code) ? 'Y' : 'N';
     return {
-      Inside_Pickup: 'N',
-      Residential_Pickup: 'N',
+      Inside_Pickup: has('inside_pickup'),
+      Residential_Pickup: has('residential_pickup'),
       Lifgate_Pickup: has('liftgate_pickup'),
       Inside_Delivery: has('inside_delivery'),
       Residential_Delivery: has('residential'),
       Lifgate_Delivery: has('liftgate_delivery'),
       Appointment_Delivery: has('appointment'),
-      OverSizeFreight: 'N',
-      Do_Not_Stack: 'N',
-      In_Bond: 'N',
-      Limited_Access_Pickup: 'N',
-      Limited_Access_Delivery: 'N',
+      OverSizeFreight: has('oversize'),
+      Do_Not_Stack: has('do_not_stack'),
+      In_Bond: has('in_bond'),
+      Limited_Access_Pickup: has('limited_access_pickup'),
+      Limited_Access_Delivery: has('limited_access_delivery'),
     };
   }
 
@@ -93,10 +106,18 @@ class PolarisAdapter extends CarrierAdapter {
     }
     if (!deliveryDate) deliveryDate = formatDate(addBusinessDays(baseDate, transitDays));
 
+    // Total_Charge already includes the requested services, listed in Additional_Services.
+    // A single service comes back as an object rather than a one-item list.
+    const services = [].concat(resp.Additional_Services || []);
+    const accessorialCharges = services
+      .map(c => ({ label: titleCase(c.Charge || ''), amount: parseFloat(c.Charge_Amount) || 0 }))
+      .filter(c => c.amount > 0);
+
     return [{
       serviceName: 'Polaris Cross-Border LTL',
       serviceCode: 'CBLTL',
       rate: Math.round(totalCharge * 100) / 100,
+      accessorialCharges,
       transitDays,
       deliveryDate,
       isLive: true,
@@ -156,9 +177,10 @@ class PolarisAdapter extends CarrierAdapter {
     const recipientAddr = details.recipient?.address || {};
     const recipientContact = details.recipient?.contact || {};
 
-    const now = new Date();
-    const pickupFrom = details.shipDatestamp || now.toISOString();
-    const pickupTo = pickupFrom;
+    const pickupDay = details.shipDatestamp || new Date().toISOString().split('T')[0];
+    const { ready, close } = pickupWindow(details);
+    const pickupFrom = `${pickupDay}T${ready}:00`;
+    const pickupTo = `${pickupDay}T${close}:00`;
 
     const body = {
       OrderSubmittion: {
@@ -192,7 +214,8 @@ class PolarisAdapter extends CarrierAdapter {
           phone: recipientContact.phoneNumber || '',
           email: recipientContact.email || '',
         },
-        ShipInstructions: this._mapAccessorials([]),
+        // The options the customer was quoted for (minus any Polaris couldn't include).
+        ShipInstructions: this._mapAccessorials(details.accessorials || []),
         DetailLines: [{
           Seq: 1,
           Description: details.commodity || 'General freight',

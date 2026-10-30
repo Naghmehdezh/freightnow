@@ -3,6 +3,7 @@ const { z } = require('zod');
 const validate = require('../middleware/validate');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 const rateService = require('../services/rate.service');
+const { pickupWindowError } = require('../utils/pickupWindow');
 
 const router = Router();
 
@@ -28,7 +29,19 @@ const rateRequestSchema = z.object({
     height: z.number().positive().optional(),
   }).optional(),
   freightClass: z.string().optional(),
+  // LTL: one entry per group of identical pieces (weight is per piece, lb; dimensions in inches).
+  lineItems: z.array(z.object({
+    pieces: z.number().int().positive(),
+    length: z.number().positive(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    weight: z.number().positive(),
+    freightClass: z.string().optional(),
+  })).max(30).optional(),
   pickupDate: z.string().optional(),
+  // Pickup window on the pickup date ("HH:MM"): 08:00–17:00, at least 4 hours.
+  pickupReadyTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  pickupCloseTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   currency: z.enum(['CAD', 'USD']).optional(),
   declaredValue: z.number().optional(),
   commodity: z.string().optional(),
@@ -42,8 +55,18 @@ const rateRequestSchema = z.object({
     material: z.enum(['LITHIUM_ION', 'LITHIUM_METAL']),
     packing: z.enum(['CONTAINED_IN_EQUIPMENT', 'PACKED_WITH_EQUIPMENT']),
   }).optional(),
+  // LTL limited access: the type of site (Estes prices limited access by site type).
+  limitedAccessType: z.enum(['school', 'secured', 'farm', 'mini_storage', 'worship', 'seaport', 'fair', 'construction']).optional(),
   // Requested delivery date for the 'date_certain' (FedEx Home Delivery®) accessorial.
   homeDeliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+}).refine(
+  // LTL is priced (and its freight class set) from the real dimensions — no default pallet size.
+  d => d.shipmentType !== 'ltl' || d.lineItems?.length > 0 || (d.dimensions?.length > 0 && d.dimensions?.width > 0 && d.dimensions?.height > 0),
+  { message: 'Length, width and height are required for LTL', path: ['dimensions'] },
+).superRefine((d, ctx) => {
+  if (!d.pickupReadyTime && !d.pickupCloseTime) return;
+  const error = pickupWindowError(d.pickupReadyTime, d.pickupCloseTime);
+  if (error) ctx.addIssue({ code: 'custom', path: ['pickupCloseTime'], message: error });
 });
 
 // Legacy FedEx endpoint (matches frontend's existing call format)

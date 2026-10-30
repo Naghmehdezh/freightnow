@@ -9,6 +9,10 @@ class CarrierAdapter {
   get name() { throw new Error('Must implement name'); }
   get isLive() { return false; }
 
+  // Whether this adapter quotes this shipment at all (beyond the Carrier DB coverage) — used to
+  // decide which carriers get a "not available with …" message for unsupported options.
+  canQuote(params) { return true; }
+
   async getRates(params) {
     throw new Error('Must implement getRates()');
   }

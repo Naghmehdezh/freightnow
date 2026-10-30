@@ -1,8 +1,21 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
 import s from './page.module.css';
 
+const QUICK_TYPES = [
+  { value: 'envelope', label: 'Envelope' },
+  { value: 'parcel', label: 'Parcel' },
+  { value: 'freight', label: 'Freight' },
+];
+
 export default function HomePage() {
+  // Quote card: signing up gives instant rates; "continue as guest" sends what was typed to the
+  // guest request form so IFF staff can contact the visitor with a price.
+  const [quick, setQuick] = useState({ type: 'envelope', from: '', to: '', weight: '', date: '' });
+  const setQ = field => e => setQuick(q => ({ ...q, [field]: e.target.value }));
+  const guestHref = `/quote-request?${new URLSearchParams(Object.entries(quick).filter(([, v]) => v)).toString()}`;
+
   return (
     <>
       {/* NAV */}
@@ -39,6 +52,7 @@ export default function HomePage() {
               </Link>
               <a href="#services" className={s.btnHeroOutline}>Our services</a>
             </div>
+            <p className={s.heroGuest}>No account? <Link href="/quote-request">Request a quote as a guest</Link> and our team will contact you.</p>
             <div className={s.heroStats}>
               <div><div className={s.statNum}>30+</div><div className={s.statLabel}>Years in business</div></div>
               <div><div className={s.statNum}>5+</div><div className={s.statLabel}>Carrier partners</div></div>
@@ -49,21 +63,26 @@ export default function HomePage() {
           <div className={s.heroCard}>
             <div className={s.heroCardTitle}>Get an instant quote</div>
             <div className={s.heroCardSub}>Compare rates across all carriers in seconds</div>
-            <div className={s.quickTypeTabs}>
-              <div className={`${s.qtTab} ${s.qtTabActive}`}>Envelope</div>
-              <div className={s.qtTab}>Parcel</div>
-              <div className={s.qtTab}>Freight</div>
+            <div className={s.quickTypeTabs} role="radiogroup" aria-label="Shipment type">
+              {QUICK_TYPES.map(t => (
+                <button key={t.value} type="button" role="radio" aria-checked={quick.type === t.value}
+                  className={`${s.qtTab} ${quick.type === t.value ? s.qtTabActive : ''}`}
+                  onClick={() => setQuick(q => ({ ...q, type: t.value }))}>{t.label}</button>
+              ))}
             </div>
             <div className={s.quickGrid}>
-              <div className={s.quickField}><label>From</label><input placeholder="City or postal code" /></div>
-              <div className={s.quickField}><label>To</label><input placeholder="City or postal code" /></div>
+              <div className={s.quickField}><label htmlFor="qc-from">From</label><input id="qc-from" placeholder="City or postal code" value={quick.from} onChange={setQ('from')} /></div>
+              <div className={s.quickField}><label htmlFor="qc-to">To</label><input id="qc-to" placeholder="City or postal code" value={quick.to} onChange={setQ('to')} /></div>
             </div>
             <div className={s.quickGrid}>
-              <div className={s.quickField}><label>Weight (lbs)</label><input type="number" placeholder="1.0" /></div>
-              <div className={s.quickField}><label>Pickup date</label><input type="date" /></div>
+              <div className={s.quickField}><label htmlFor="qc-weight">Weight per item (lbs)</label><input id="qc-weight" type="number" min="0" value={quick.weight} onChange={setQ('weight')} /></div>
+              <div className={s.quickField}><label htmlFor="qc-date">Pickup date</label><input id="qc-date" type="date" value={quick.date} onChange={setQ('date')} /></div>
             </div>
-            <Link href="/register"><button className={s.btnGetQuote}>Sign up to compare rates &rarr;</button></Link>
-            <div className={s.cardNote}>Free account &middot; No credit card required to quote</div>
+            <Link href="/register" className={s.btnGetQuote}>Sign up for instant rates &rarr;</Link>
+            <div className={s.cardNote}>Free account &middot; Instant rates from all carriers</div>
+            <div className={s.orDivider}><span>or</span></div>
+            <Link href={guestHref} className={s.btnGuest}>Continue as guest and get a quote from our team</Link>
+            <div className={s.cardNote}>We&apos;ll contact you with a price. No account needed.</div>
           </div>
         </div>
       </section>

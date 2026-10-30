@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/portal/quote', label: 'Get a quote', icon: 'search' },
   { href: '/portal', label: 'Dashboard', icon: 'dashboard' },
   { href: '/portal/shipments', label: 'My shipments', icon: 'truck' },
+  { href: '/portal/spot-rates', label: 'Spot-rate requests', icon: 'tag' },
   { href: '/portal/track', label: 'Track shipment', icon: 'pin' },
   { href: '/portal/claims', label: 'Claims', icon: 'file' },
   { section: 'Account' },
@@ -18,10 +19,12 @@ const NAV_ITEMS = [
   { href: '/', label: 'Back to website', icon: 'home' },
 ];
 
-// Shown only to IFF admins — the pages themselves are also admin-guarded server-side.
+// Shown only to IFF staff / admins — the pages themselves are also role-guarded server-side.
 const ADMIN_ITEMS = [
   { section: 'IFF Admin' },
-  { href: '/portal/admin/pricing', label: 'Pricing', icon: 'chart' },
+  { href: '/portal/admin/spot-rates', label: 'Spot rates', icon: 'tag', roles: ['iff_staff', 'iff_admin'] },
+  { href: '/portal/admin/guest-quotes', label: 'Guest requests', icon: 'user', roles: ['iff_staff', 'iff_admin'] },
+  { href: '/portal/admin/pricing', label: 'Pricing', icon: 'chart', roles: ['iff_admin'] },
 ];
 
 const ICONS = {
@@ -32,6 +35,7 @@ const ICONS = {
   file: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>,
   user: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
   card: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>,
+  tag: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
   chart: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
   home: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
   logout: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
@@ -41,7 +45,8 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { logout, user: auth0User } = useAuth0();
   const { role } = useRole();
-  const navItems = role === 'iff_admin' ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+  const adminItems = ADMIN_ITEMS.filter(i => !i.roles || i.roles.includes(role));
+  const navItems = adminItems.some(i => i.href) ? [...NAV_ITEMS, ...adminItems] : NAV_ITEMS;
 
   function handleSignOut() {
     logout({ logoutParams: { returnTo: window.location.origin } });

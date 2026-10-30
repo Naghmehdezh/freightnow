@@ -3,6 +3,38 @@ const TrackingEvent = require('../models/TrackingEvent');
 const { getCarrier } = require('../carriers');
 const { NotFoundError } = require('../utils/errors');
 
+const STATUS_ORDER = ['pending', 'in_transit', 'delivered'];
+
+// Ask the carrier for the shipment's latest status and save it on the shipment. Status only
+// moves forward (a test system's odd answer can't take a delivered shipment back to pending).
+// Returns the carrier's tracking data, or null when the carrier has nothing for it.
+async function refreshFromCarrier(shipment) {
+  if (!shipment.carrierTrackingNumber) return null;
+  let carrierData = null;
+  try {
+    const carrier = await getCarrier(shipment.carrierId || 'fedex');
+    if (carrier) {
+      // Prefer carrierConfirmationNumber for carriers that need it (e.g. CSA orderId)
+      const trackId = shipment.carrierConfirmationNumber || shipment.carrierTrackingNumber;
+      carrierData = await carrier.getTracking(trackId);
+    }
+  } catch (err) {
+    console.error(`[TRACKING] ${shipment.trackingNumber}: carrier tracking failed:`, err.message);
+  }
+
+  const update = { lastTrackedAt: new Date() };
+  const status = carrierData?.status;
+  if (STATUS_ORDER.includes(status) && STATUS_ORDER.indexOf(status) > STATUS_ORDER.indexOf(shipment.status || 'pending')) {
+    update.status = status;
+  }
+  if (carrierData?.actualDelivery) update.actualDelivery = String(carrierData.actualDelivery);
+  if (carrierData?.estimatedDelivery) update.estimatedDelivery = String(carrierData.estimatedDelivery);
+  await Shipment.updateOne({ _id: shipment._id }, update);
+  Object.assign(shipment, update);
+  if (update.status) console.log(`[TRACKING] ${shipment.trackingNumber}: status now ${update.status}`);
+  return carrierData;
+}
+
 async function getTracking(trackingNumber) {
   // Look up by IFF tracking number first, then by carrier tracking number
   let shipment = await Shipment.findOne({ trackingNumber });
@@ -16,20 +48,8 @@ async function getTracking(trackingNumber) {
     throw new NotFoundError('Shipment');
   }
 
-  // Try live carrier tracking if we have a real carrier tracking number
-  let carrierData = null;
-  if (shipment.carrierTrackingNumber) {
-    try {
-      const carrier = await getCarrier(shipment.carrierId || 'fedex');
-      if (carrier) {
-        // Prefer carrierConfirmationNumber for carriers that need it (e.g. CSA orderId)
-        const trackId = shipment.carrierConfirmationNumber || shipment.carrierTrackingNumber;
-        carrierData = await carrier.getTracking(trackId);
-      }
-    } catch (err) {
-      console.error('[TRACKING] Carrier tracking failed:', err.message);
-    }
-  }
+  // Live carrier tracking (when we have a carrier tracking number); saves the status too.
+  const carrierData = await refreshFromCarrier(shipment);
 
   // Use carrier events if available, otherwise fall back to DB events
   let events;
@@ -139,4 +159,4 @@ function _formatDeliveryDate(dateVal) {
   });
 }
 
-module.exports = { getTracking };
+module.exports = { getTracking, refreshFromCarrier };

@@ -35,16 +35,22 @@
 .heroCardTitle { font-family: var(--display); font-size: 18px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
 .heroCardSub { font-size: 13px; color: var(--text3); margin-bottom: 24px; }
 .quickTypeTabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 20px; }
-.qtTab { padding: 10px 6px; border: 1.5px solid var(--border); border-radius: 8px; text-align: center; cursor: pointer; font-family: var(--display); font-size: 12px; font-weight: 600; color: var(--text2); transition: all .15s; background: var(--off-white); }
+.qtTab { appearance: none; font: inherit; padding: 10px 6px; border: 1.5px solid var(--border); border-radius: 8px; text-align: center; cursor: pointer; font-family: var(--display); font-size: 12px; font-weight: 600; color: var(--text2); transition: all .15s; background: var(--off-white); }
 .qtTabActive { background: var(--navy); border-color: var(--navy); color: var(--white); }
 .quickField { margin-bottom: 12px; }
 .quickField label { display: block; font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px; font-family: var(--display); }
 .quickField input { width: 100%; height: 42px; padding: 0 14px; border: 1.5px solid var(--border); border-radius: 8px; font-family: var(--body); font-size: 14px; color: var(--text); background: var(--white); appearance: none; transition: border-color .15s; }
 .quickField input:focus { outline: none; border-color: var(--navy); }
 .quickGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.btnGetQuote { width: 100%; height: 48px; background: var(--navy); border: none; border-radius: 10px; font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--white); cursor: pointer; transition: all .2s; margin-top: 4px; }
+.btnGetQuote { display: flex; align-items: center; justify-content: center; text-decoration: none; width: 100%; height: 48px; background: var(--navy); border: none; border-radius: 10px; font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--white); cursor: pointer; transition: all .2s; margin-top: 4px; }
 .btnGetQuote:hover { background: var(--navy-dark); transform: translateY(-1px); }
 .cardNote { text-align: center; font-size: 11px; color: var(--text3); margin-top: 10px; }
+.orDivider { display: flex; align-items: center; gap: 10px; margin: 16px 0 12px; color: var(--text3); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-family: var(--display); }
+.orDivider::before, .orDivider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.btnGuest { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 46px; padding: 8px 14px; border: 2px solid var(--navy); border-radius: 10px; font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--navy); text-decoration: none; text-align: center; transition: all .2s; }
+.btnGuest:hover { background: var(--sky); }
+.heroGuest { margin-top: 18px; font-size: 14px; color: rgba(255,255,255,.7); }
+.heroGuest a { color: var(--accent); font-weight: 600; }
 
 /* SECTIONS */
 .section { padding: 96px 0; }

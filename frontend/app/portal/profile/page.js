@@ -61,7 +61,7 @@ export default function ProfilePage() {
     setSuccess('');
     try {
       await fetchAPI('/api/profile', { method: 'PUT', body: JSON.stringify(profile) });
-      setSuccess('Profile updated successfully.');
+      setSuccess('Profile saved.');
       setEditingProfile(false);
     } catch {}
     setSaving(false);
@@ -73,7 +73,7 @@ export default function ProfilePage() {
     setSuccess('');
     try {
       await fetchAPI('/api/profile/company', { method: 'PUT', body: JSON.stringify(company) });
-      setSuccess('Company info updated.');
+      setSuccess('Company details saved.');
       setEditingCompany(false);
     } catch {}
     setSaving(false);
@@ -96,15 +96,16 @@ export default function ProfilePage() {
     <>
       {success && <div className={s.success}>{success}</div>}
 
-      <div className="section-card">
+      <div className={`section-card ${s.block}`}>
         <div className={s.sectionHeader}>
-          <div className={s.sectionTitle}>Personal Information</div>
+          <div className={s.sectionTitle}>Personal information</div>
+          <p className={s.sectionDesc}>Your name as it appears on bookings and invoices.</p>
           {!editingProfile && <button type="button" className={s.btnEdit} onClick={() => setEditingProfile(true)}>Edit</button>}
         </div>
         <form onSubmit={handleSaveProfile}>
           <div className="grid2">
-            <div className="field"><label>First name</label><input value={profile.firstName} onChange={e => setProfile({ ...profile, firstName: e.target.value })} readOnly={!editingProfile} className={!editingProfile ? s.readOnly : ''} /></div>
-            <div className="field"><label>Last name</label><input value={profile.lastName} onChange={e => setProfile({ ...profile, lastName: e.target.value })} readOnly={!editingProfile} className={!editingProfile ? s.readOnly : ''} /></div>
+            <div className="field"><label>First name</label><input value={profile.firstName} onChange={e => setProfile({ ...profile, firstName: e.target.value })} readOnly={!editingProfile} placeholder={!editingProfile ? 'Not set' : undefined} className={!editingProfile ? s.readOnly : ''} /></div>
+            <div className="field"><label>Last name</label><input value={profile.lastName} onChange={e => setProfile({ ...profile, lastName: e.target.value })} readOnly={!editingProfile} placeholder={!editingProfile ? 'Not set' : undefined} className={!editingProfile ? s.readOnly : ''} /></div>
           </div>
           <div className="field"><label>Email</label><input type="email" value={profile.email} readOnly className={s.readOnly} /></div>
           {editingProfile && (
@@ -116,20 +117,21 @@ export default function ProfilePage() {
         </form>
       </div>
 
-      <div className="section-card">
+      <div className={`section-card ${s.block}`}>
         <div className={s.sectionHeader}>
           <div className={s.sectionTitle}>Company</div>
+          <p className={s.sectionDesc}>Used as the shipper on pickups and on your invoices.</p>
           {!editingCompany && <button type="button" className={s.btnEdit} onClick={() => setEditingCompany(true)}>Edit</button>}
         </div>
         <form onSubmit={handleSaveCompany}>
-          <div className="field"><label>Company name</label><input value={company.name} onChange={e => setCompany({ ...company, name: e.target.value })} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
-          <div className="field"><label>Street address</label><input value={company.street} onChange={e => setCompany({ ...company, street: e.target.value })} placeholder={editingCompany ? '123 Main St, Unit 4' : ''} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
+          <div className="field"><label>Company name</label><input value={company.name} onChange={e => setCompany({ ...company, name: e.target.value })} readOnly={!editingCompany} placeholder={!editingCompany ? 'Not set' : undefined} className={!editingCompany ? s.readOnly : ''} /></div>
+          <div className="field"><label>Street address</label><input value={company.street} onChange={e => setCompany({ ...company, street: e.target.value })} placeholder={editingCompany ? '123 Main St, Unit 4' : 'Not set'} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
           <div className="grid2">
-            <div className="field"><label>City</label><input value={company.city} onChange={e => setCompany({ ...company, city: e.target.value })} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
-            <div className="field"><label>Province / State</label><input value={company.province} onChange={e => setCompany({ ...company, province: e.target.value })} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
+            <div className="field"><label>City</label><input value={company.city} onChange={e => setCompany({ ...company, city: e.target.value })} readOnly={!editingCompany} placeholder={!editingCompany ? 'Not set' : undefined} className={!editingCompany ? s.readOnly : ''} /></div>
+            <div className="field"><label>Province / State</label><input value={company.province} onChange={e => setCompany({ ...company, province: e.target.value })} readOnly={!editingCompany} placeholder={!editingCompany ? 'Not set' : undefined} className={!editingCompany ? s.readOnly : ''} /></div>
           </div>
           <div className="grid2">
-            <div className="field"><label>Postal code</label><input value={company.postalCode} onChange={e => setCompany({ ...company, postalCode: e.target.value })} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
+            <div className="field"><label>Postal code</label><input value={company.postalCode} onChange={e => setCompany({ ...company, postalCode: e.target.value })} readOnly={!editingCompany} placeholder={!editingCompany ? 'Not set' : undefined} className={!editingCompany ? s.readOnly : ''} /></div>
             <div className="field"><label>Country</label>
               {editingCompany ? (
                 <select value={company.country} onChange={e => setCompany({ ...company, country: e.target.value })}>
@@ -141,8 +143,8 @@ export default function ProfilePage() {
             </div>
           </div>
           <div className="grid2">
-            <div className="field"><label>Phone</label><input value={company.phone} onChange={e => setCompany({ ...company, phone: e.target.value })} placeholder={editingCompany ? '416 555 0100' : ''} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
-            <div className="field"><label>Tax number (GST/HST)</label><input value={company.taxNumber} onChange={e => setCompany({ ...company, taxNumber: e.target.value })} placeholder={editingCompany ? '123456789RT0001' : ''} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
+            <div className="field"><label>Phone</label><input value={company.phone} onChange={e => setCompany({ ...company, phone: e.target.value })} placeholder={editingCompany ? '416 555 0100' : 'Not set'} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
+            <div className="field"><label>Tax number (GST/HST)</label><input value={company.taxNumber} onChange={e => setCompany({ ...company, taxNumber: e.target.value })} placeholder={editingCompany ? '123456789RT0001' : 'Not set'} readOnly={!editingCompany} className={!editingCompany ? s.readOnly : ''} /></div>
           </div>
           {editingCompany && (
             <div className={s.btnRow}>
@@ -153,13 +155,14 @@ export default function ProfilePage() {
         </form>
       </div>
 
-      <div className="section-card">
+      <div className={`section-card ${s.block}`}>
         <div className={s.sectionHeader}>
           <div className={s.sectionTitle}>Password</div>
+          <p className={s.sectionDesc}>Change the password you sign in with.</p>
           {!editingPassword && <button type="button" className={s.btnEdit} onClick={() => setEditingPassword(true)}>Change password</button>}
         </div>
         {!editingPassword && (
-          <p className={s.hint}>Use the button above to update your password.</p>
+          <p className={s.hint}>Your password is set. Choose Change password to update it.</p>
         )}
         {editingPassword && (
           <form onSubmit={handleChangePassword}>
@@ -176,23 +179,24 @@ export default function ProfilePage() {
         )}
       </div>
 
-      <div className="section-card">
+      <div className={`section-card ${s.block}`}>
         <div className={s.sectionHeader}>
-          <div className={s.sectionTitle}>FedEx Account</div>
+          <div className={s.sectionTitle}>FedEx account</div>
+          <p className={s.sectionDesc}>Ship on your own FedEx account and rates.</p>
           {!fedexConnections.length && (
             <button type="button" className={s.btnEdit} onClick={() => setShowFedexModal(true)}>Connect FedEx account</button>
           )}
         </div>
         {!fedexConnections.length && (
-          <p className={s.hint}>Connect your FedEx account to start shipping with FedEx.</p>
+          <p className={s.hint}>No FedEx account connected.</p>
         )}
         {fedexConnections.map(c => (
-          <div key={c._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0' }}>
+          <div key={c._id} className={s.connection}>
             <div>
-              <span style={{ fontWeight: 500 }}>Account ****{c.fedexAccountNumber?.slice(-4)}</span>
-              {c.status === 'verified' && <span style={{ color: 'var(--green)', marginLeft: 8 }}>Connected</span>}
-              {c.status === 'awaiting_factor2' && <span style={{ color: 'var(--amber)', marginLeft: 8 }}>Pending verification</span>}
-              {c.status === 'locked' && <span style={{ color: 'var(--red)', marginLeft: 8 }}>Locked</span>}
+              <span className={s.connectionName}>Account ending {c.fedexAccountNumber?.slice(-4)}</span>
+              {c.status === 'verified' && <span className={`${s.connStatus} ${s.connOk}`}>Connected</span>}
+              {c.status === 'awaiting_factor2' && <span className={`${s.connStatus} ${s.connWait}`}>Waiting for verification</span>}
+              {c.status === 'locked' && <span className={`${s.connStatus} ${s.connLocked}`}>Locked</span>}
             </div>
             <button type="button" className={s.btnCancel} onClick={() => handleDisconnectFedex(c._id)}>Disconnect</button>
           </div>
@@ -200,7 +204,7 @@ export default function ProfilePage() {
         {showFedexModal && (
           <FedexConnectModal
             onClose={() => setShowFedexModal(false)}
-            onConnected={() => { setShowFedexModal(false); loadFedexConnections(); setSuccess('FedEx account connected successfully.'); }}
+            onConnected={() => { setShowFedexModal(false); loadFedexConnections(); setSuccess('FedEx account connected.'); }}
           />
         )}
       </div>

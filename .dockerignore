@@ -1,0 +1,8 @@
+# Used by builds whose context is the repository root (backend/Dockerfile).
+# Allowlist: send only what the API image needs, so .env files, API documents,
+# test output and node_modules never reach the build.
+*
+!backend/package.json
+!backend/package-lock.json
+!backend/src
+!Carrier_Mapping.md

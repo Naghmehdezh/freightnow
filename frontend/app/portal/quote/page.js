@@ -13,6 +13,7 @@ import BookingModal from '@/components/BookingModal';
 import PickupWindow from '@/components/PickupWindow';
 import PackageGroups, { emptyGroup, groupTotals } from '@/components/PackageGroups';
 import { COUNTRIES, COUNTRY_CODES } from '@/lib/countries';
+import { MEASUREMENTS_NOTICE, RESULTS_NOTICE } from '@/lib/disclaimers';
 import s from './page.module.css';
 
 const SPOT_TYPES = ['ftl', 'air', 'ocean'];
@@ -94,6 +95,19 @@ const SPOT_LABELS = {
   ocean: { title: 'Ocean Freight — Spot rate request', desc: 'LCL and FCL ocean freight pricing varies by route and market conditions. Fill in your shipment details and we\'ll send you a competitive quote within 2–4 business hours.' },
 };
 
+// Exchange rate fallback (the server sends the pricing rules' rate with each quote).
+const DEFAULT_USD_TO_CAD = 1.4;
+function bothCurrencies(amount, currency, usdToCad = DEFAULT_USD_TO_CAD) {
+  const a = Number(amount) || 0;
+  const fx = Number(usdToCad) || DEFAULT_USD_TO_CAD;
+  const r2 = n => Math.round(n * 100) / 100;
+  return currency === 'USD' ? { USD: r2(a), CAD: r2(a * fx) } : { CAD: r2(a), USD: r2(a / fx) };
+}
+const curSym = c => (c === 'USD' ? 'US$' : 'C$');
+
+// QuickBooks sandbox "Pay now" links point at Intuit's placeholder page, which returns 404.
+const isSandboxLink = link => !link || /developer\.intuit\.com\/comingSoon/.test(link);
+
 function applyMarkup(rate) {
   if (rate <= 100) return rate * 1.70;
   if (rate <= 250) return rate * 1.55;
@@ -153,6 +167,15 @@ export default function QuotePage() {
   const [currentType, setCurrentType] = useState('envelope');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
+  // Currency the customer views and pays in (CAD / USD). Remembered in this browser.
+  const [viewCurrency, setViewCurrency] = useState(null);
+  useEffect(() => {
+    try { const saved = localStorage.getItem('iff.viewCurrency'); if (saved === 'CAD' || saved === 'USD') setViewCurrency(saved); } catch { /* storage unavailable */ }
+  }, []);
+  function chooseCurrency(cur) {
+    setViewCurrency(cur);
+    try { localStorage.setItem('iff.viewCurrency', cur); } catch { /* storage unavailable */ }
+  }
   const [spotResult, setSpotResult] = useState(null); // { requestNumber } once IFF has it
   const [spotError, setSpotError] = useState('');
   const [spotSubmitting, setSpotSubmitting] = useState(false);
@@ -160,6 +183,7 @@ export default function QuotePage() {
   const [confirmRate, setConfirmRate] = useState(null); // rate awaiting the user's booking confirmation
   const [labels, setLabels] = useState({}); // { [quoteRateId]: { encodedLabel, docType, trackingNumber } }
   const [pickups, setPickups] = useState({}); // { [quoteRateId]: { scheduled, confirmationNumber, message } }
+  const [reserved, setReserved] = useState({}); // { [quoteRateId]: { bookingId, bookingNumber, link, payBy, paid, checking } } — QuickBooks link bookings
   const [originValidation, setOriginValidation] = useState(null);
   const [destValidation, setDestValidation] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -277,7 +301,8 @@ export default function QuotePage() {
     if (!origCountry || !destCountry) { alert('Please select the origin and destination country.'); return; }
 
     const { weight, pieces, pickupDate, dimL, dimW, dimH, freightClass: fc } = getFields();
-    if (!weight) { alert('Please enter the weight.'); return; }
+    if (!(Number(weight) > 0)) { alert('Please enter a weight greater than 0.'); return; }
+    if ([dimL, dimW, dimH].some(d => d !== undefined && d !== '' && d !== null && !(Number(d) > 0))) { alert('Length, width and height must be greater than 0.'); return; }
     if (wantsPickup && (!pickupDate || !pickupReady || !pickupClose)) { alert('Please choose the pickup date, ready time and close time.'); return; }
     if (currentType === 'ltl' && (!ltlLineItems.length || ltlGroups.some(g => !ltlGroupComplete(g) && (g.pieces || g.length || g.width || g.height || g.weight)))) {
       alert('Please enter pieces, length, width, height and weight per piece for every group.'); return;
@@ -328,6 +353,7 @@ export default function QuotePage() {
     await new Promise(r => setTimeout(r, 900));
 
     let quoteResults;
+    let usedFx = DEFAULT_USD_TO_CAD;
     let quotedRequest = null; // what was quoted — the booking step needs it
     let unavailableCarriers = []; // carriers that can't provide a selected option
     try {
@@ -376,9 +402,11 @@ export default function QuotePage() {
         carrier: CARRIERS.find(c => c.id === u.carrierId) || { id: u.carrierId, name: u.carrierName },
         message: u.message,
       }));
+      usedFx = data.usdToCad || DEFAULT_USD_TO_CAD;
       quoteResults = (data.rates || []).map(r => ({
         carrier: CARRIERS.find(c => c.id === r.carrierId) || CARRIERS[0],
         displayRate: r.displayRate,
+        prices: r.prices || bothCurrencies(r.displayRate, r.currency || 'CAD', data.usdToCad),
         notIncluded: r.notIncluded || null, // selected options this carrier couldn't include
         currency: r.currency || 'CAD', // each rate is in its carrier's own currency
         transitDays: r.transitDays,
@@ -404,13 +432,15 @@ export default function QuotePage() {
       });
       quoteResults = eligible.map(c => {
         const sim = simulateRate(c, currentType, weight, fc, orig, dest, selectedAccessorials, pickupDate);
-        return { carrier: c, ...sim, currency: origCountry === 'US' ? 'USD' : 'CAD', displayRate: Math.round(applyMarkup(sim.rate) * 100) / 100 };
+        const displayRate = Math.round(applyMarkup(sim.rate) * 100) / 100;
+        const currency = origCountry === 'US' ? 'USD' : 'CAD';
+        return { carrier: c, ...sim, currency, displayRate, prices: bothCurrencies(displayRate, currency, DEFAULT_USD_TO_CAD) };
       });
       quoteResults.sort((a, b) => a.displayRate - b.displayRate);
     }
     // Live results keep the server's order: it ranks across CAD and USD rates on a common
     // basis, which a raw price sort here can't do.
-    setResults({ request: quotedRequest, quotes: quoteResults, unavailable: unavailableCarriers, summary: { count: quoteResults.length, orig: origCity || origPostal, dest: destCity || destPostal, type: { envelope: 'Envelope', parcel: 'Parcel', ltl: 'LTL Freight' }[currentType], weight } });
+    setResults({ request: quotedRequest, usdToCad: usedFx, quotes: quoteResults, unavailable: unavailableCarriers, summary: { count: quoteResults.length, orig: origCity || origPostal, dest: destCity || destPostal, type: { envelope: 'Envelope', parcel: 'Parcel', ltl: 'LTL Freight' }[currentType], weight } });
     setLoading(false);
   }
 
@@ -436,6 +466,14 @@ export default function QuotePage() {
         body: JSON.stringify({ quoteId: r.quoteId, quoteRateId: r.quoteRateId, ...details }),
       });
       setBooking(prev => ({ ...prev, [r.quoteRateId]: 'booked' }));
+      if (data.awaitingPayment) {
+        // Reserved: the carrier is booked once the QuickBooks invoice is paid.
+        const sandbox = isSandboxLink(data.paymentLink);
+        setReserved(prev => ({ ...prev, [r.quoteRateId]: { bookingId: data.booking._id || data.booking.id, bookingNumber: data.booking.bookingNumber, link: sandbox ? null : data.paymentLink, sandbox, payBy: data.payBy } }));
+        if (data.paymentLink && !sandbox) window.open(data.paymentLink, '_blank', 'noopener');
+        alert(`Booking ${data.booking.bookingNumber} is reserved. Pay ${r.currency === 'USD' ? 'US$' : 'C$'}${Number(r.displayRate - (data.creditApplied || 0)).toFixed(2)} ${sandbox ? 'with the "Test payment" button (QuickBooks sandbox has no real payment page)' : 'on the QuickBooks payment page'} by ${new Date(data.payBy).toLocaleString('en-CA')}. We book the carrier as soon as it's paid.`);
+        return;
+      }
       if (data.label?.encodedLabel) {
         setLabels(prev => ({ ...prev, [r.quoteRateId]: {
           encodedLabel: data.label.encodedLabel,
@@ -450,6 +488,7 @@ export default function QuotePage() {
         ? `Booked & paid! Booking ${data.booking.bookingNumber} — tracking: ${tracking}`
         : `Booked! Booking ${data.booking.bookingNumber} — tracking: ${tracking}. Invoice will be sent.`;
       if (data.manualCarrierBooking?.reason) msg += `\n\n${data.manualCarrierBooking.reason}`;
+      if (data.creditApplied > 0) msg += `\n\nStore credit used: ${r.currency === 'USD' ? 'US$' : 'C$'}${Number(data.creditApplied).toFixed(2)}.`;
       if (!data.pickup && isParcelType && !selectedAccessorials.includes('pickup')) {
         msg += `\n\nNo pickup requested: drop it off at a ${r.carrier.name} location or give it to your regular ${r.carrier.name} pickup.`;
       }
@@ -464,6 +503,35 @@ export default function QuotePage() {
       setBooking(prev => ({ ...prev, [r.quoteRateId]: 'error' }));
       const message = err.error?.message || err.message || 'Could not book this rate.';
       alert(message);
+    }
+  }
+
+  // Sandbox: the "Pay now" link is Intuit's placeholder page (404) — pay with a test payment instead.
+  async function testReservedPayment(quoteRateId) {
+    const res = reserved[quoteRateId];
+    setReserved(prev => ({ ...prev, [quoteRateId]: { ...res, checking: true } }));
+    try {
+      const data = await fetchAPI(`/api/bookings/${res.bookingId}/test-payment`, { method: 'POST' });
+      setReserved(prev => ({ ...prev, [quoteRateId]: { ...res, checking: false, paid: !!data.paid } }));
+      if (data.pickup) setPickups(prev => ({ ...prev, [quoteRateId]: data.pickup }));
+      alert(data.paid ? `Test payment recorded — booking ${res.bookingNumber} is now booked with the carrier.` : 'The test payment was recorded but not confirmed yet. Try "check" in a moment.');
+    } catch (err) {
+      setReserved(prev => ({ ...prev, [quoteRateId]: { ...res, checking: false } }));
+      alert(err.error?.message || 'Could not record the test payment.');
+    }
+  }
+
+  async function checkReservedPayment(quoteRateId) {
+    const res = reserved[quoteRateId];
+    setReserved(prev => ({ ...prev, [quoteRateId]: { ...res, checking: true } }));
+    try {
+      const data = await fetchAPI(`/api/bookings/${res.bookingId}/check-payment`, { method: 'POST' });
+      setReserved(prev => ({ ...prev, [quoteRateId]: { ...res, checking: false, paid: !!data.paid, cancelled: data.status === 'cancelled' } }));
+      if (data.paid && data.pickup) setPickups(prev => ({ ...prev, [quoteRateId]: data.pickup }));
+      if (!data.paid) alert(data.status === 'cancelled' ? 'This reservation was cancelled because it was not paid in time.' : 'We haven\'t received the payment yet. It can take a minute after you pay.');
+    } catch (err) {
+      setReserved(prev => ({ ...prev, [quoteRateId]: { ...res, checking: false } }));
+      alert(err.error?.message || 'Could not check the payment.');
     }
   }
 
@@ -565,51 +633,48 @@ export default function QuotePage() {
   }
 
   return (
-    <div className="section-card">
+    <div className={s.page}>
+    <section className="section-card" aria-label="Shipment details">
       {/* Shipment type selector */}
-      <div className={s.sectionLabel}>Select shipment type</div>
-      <div className={s.typeGrid}>
-        <div className={`${s.typeCard} ${currentType === 'envelope' ? s.active : ''}`} onClick={() => handleTypeChange('envelope')}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="m2 6 10 8 10-8"/></svg>
+      <div className={s.sectionLabel} id="shipment-type-label">Shipment type</div>
+      <div className={s.typeGrid} role="radiogroup" aria-labelledby="shipment-type-label">
+        <div className={s.typeGroupLabel}>Instant rates</div>
+        <button type="button" role="radio" aria-checked={currentType === 'envelope'} className={`${s.typeCard} ${currentType === 'envelope' ? s.active : ''}`} onClick={() => handleTypeChange('envelope')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="m2 6 10 8 10-8"/></svg>
           <div className={s.typeLabel}>Envelope</div>
           <div className={s.typeSub}>Letters, documents</div>
-          <span className={`${s.typeTag} ${s.tagInstant}`}>&#9889; Instant quote</span>
-        </div>
-        <div className={`${s.typeCard} ${currentType === 'parcel' ? s.active : ''}`} onClick={() => handleTypeChange('parcel')}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </button>
+        <button type="button" role="radio" aria-checked={currentType === 'parcel'} className={`${s.typeCard} ${currentType === 'parcel' ? s.active : ''}`} onClick={() => handleTypeChange('parcel')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
           <div className={s.typeLabel}>Parcel</div>
           <div className={s.typeSub}>Boxes, packages</div>
-          <span className={`${s.typeTag} ${s.tagInstant}`}>&#9889; Instant quote</span>
-        </div>
-        <div className={`${s.typeCard} ${currentType === 'ltl' ? s.active : ''}`} onClick={() => handleTypeChange('ltl')}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-          <div className={s.typeLabel}>LTL Freight</div>
-          <div className={s.typeSub}>Pallets, less-than-truckload</div>
-          <span className={`${s.typeTag} ${s.tagInstant}`}>&#9889; Instant quote</span>
-        </div>
-        <div className={`${s.typeCard} ${s.spotType} ${currentType === 'ftl' ? s.active : ''}`} onClick={() => handleTypeChange('ftl')}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/><rect x="9" y="11" width="14" height="10" rx="1"/><circle cx="12" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>
+        </button>
+        <button type="button" role="radio" aria-checked={currentType === 'ltl'} className={`${s.typeCard} ${currentType === 'ltl' ? s.active : ''}`} onClick={() => handleTypeChange('ltl')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          <div className={s.typeLabel}>LTL freight</div>
+          <div className={s.typeSub}>Pallets, shared truck</div>
+        </button>
+        <div className={s.typeGroupLabel}>Priced by IFF</div>
+        <button type="button" role="radio" aria-checked={currentType === 'ftl'} className={`${s.typeCard} ${s.spotType} ${currentType === 'ftl' ? s.active : ''}`} onClick={() => handleTypeChange('ftl')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/><rect x="9" y="11" width="14" height="10" rx="1"/><circle cx="12" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>
           <div className={s.typeLabel}>FTL / PTL</div>
-          <div className={s.typeSub}>Full or partial truckload</div>
-          <span className={`${s.typeTag} ${s.tagSpot}`}>&#9993; Spot rate</span>
-        </div>
-        <div className={`${s.typeCard} ${s.spotType} ${currentType === 'air' ? s.active : ''}`} onClick={() => handleTypeChange('air')}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>
-          <div className={s.typeLabel}>Air Freight</div>
-          <div className={s.typeSub}>Import &amp; export</div>
-          <span className={`${s.typeTag} ${s.tagSpot}`}>&#9993; Spot rate</span>
-        </div>
-        <div className={`${s.typeCard} ${s.spotType} ${currentType === 'ocean' ? s.active : ''}`} onClick={() => handleTypeChange('ocean')}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 17l4-8 4 4 4-6 4 10"/><path d="M3 21h18"/></svg>
-          <div className={s.typeLabel}>Ocean Freight</div>
-          <div className={s.typeSub}>LCL &amp; FCL import/export</div>
-          <span className={`${s.typeTag} ${s.tagSpot}`}>&#9993; Spot rate</span>
-        </div>
+          <div className={s.typeSub}>Dedicated truck</div>
+        </button>
+        <button type="button" role="radio" aria-checked={currentType === 'air'} className={`${s.typeCard} ${s.spotType} ${currentType === 'air' ? s.active : ''}`} onClick={() => handleTypeChange('air')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>
+          <div className={s.typeLabel}>Air freight</div>
+          <div className={s.typeSub}>Import and export</div>
+        </button>
+        <button type="button" role="radio" aria-checked={currentType === 'ocean'} className={`${s.typeCard} ${s.spotType} ${currentType === 'ocean' ? s.active : ''}`} onClick={() => handleTypeChange('ocean')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 17l4-8 4 4 4-6 4 10"/><path d="M3 21h18"/></svg>
+          <div className={s.typeLabel}>Ocean freight</div>
+          <div className={s.typeSub}>LCL and FCL</div>
+        </button>
       </div>
 
       {/* Spot-rate service choice — decides which address details are needed */}
       {currentType === 'air' && (
-        <div className="field" style={{ marginBottom: 16, maxWidth: 360 }}>
+        <div className={`field ${s.narrowField}`}>
           <label>Pick up required *</label>
           <select value={airService} onChange={e => setAirService(e.target.value)}>
             <option value="">Select</option>
@@ -619,7 +684,7 @@ export default function QuotePage() {
         </div>
       )}
       {currentType === 'ocean' && (
-        <div className="field" style={{ marginBottom: 16, maxWidth: 360 }}>
+        <div className={`field ${s.narrowField}`}>
           <label>Ocean service type *</label>
           <select value={oceanType} onChange={e => setOceanType(e.target.value)}>
             <option value="">Select service type</option>
@@ -657,7 +722,7 @@ export default function QuotePage() {
           )}
           {origMode === 'full' && (<>
           {originValidation && originValidation.valid === true && (
-            <div className={s.validationOk}>&#10003; Origin address verified{originValidation.classification !== 'UNKNOWN' ? ` (${originValidation.classification.toLowerCase()})` : ''}</div>
+            <div className={s.validationOk}>Origin address verified{originValidation.classification !== 'UNKNOWN' ? ` (${originValidation.classification.toLowerCase()})` : ''}</div>
           )}
           {originValidation && originValidation.valid === false && originValidation.effectiveAddress ? (
             <div className={s.validationSuggestion}>
@@ -671,7 +736,7 @@ export default function QuotePage() {
               }}>Accept suggestion</button>
             </div>
           ) : originValidation && originValidation.valid === false ? (
-            <div className={s.validationError}>&#10007; Origin address could not be validated. Please check city and postal code.</div>
+            <div className={s.validationError}>Origin address could not be verified. Check the city and postal code.</div>
           ) : null}
           </>)}
         </div>
@@ -699,7 +764,7 @@ export default function QuotePage() {
           )}
           {destMode === 'full' && (<>
           {destValidation && destValidation.valid === true && (
-            <div className={s.validationOk}>&#10003; Destination address verified{destValidation.classification !== 'UNKNOWN' ? ` (${destValidation.classification.toLowerCase()})` : ''}</div>
+            <div className={s.validationOk}>Destination address verified{destValidation.classification !== 'UNKNOWN' ? ` (${destValidation.classification.toLowerCase()})` : ''}</div>
           )}
           {destValidation && destValidation.valid === false && destValidation.effectiveAddress ? (
             <div className={s.validationSuggestion}>
@@ -713,7 +778,7 @@ export default function QuotePage() {
               }}>Accept suggestion</button>
             </div>
           ) : destValidation && destValidation.valid === false ? (
-            <div className={s.validationError}>&#10007; Destination address could not be validated. Please check city and postal code.</div>
+            <div className={s.validationError}>Destination address could not be verified. Check the city and postal code.</div>
           ) : null}
           </>)}
         </div>
@@ -728,6 +793,9 @@ export default function QuotePage() {
             ready={pickupReady} onReadyChange={setPickupReady}
             close={pickupClose} onCloseChange={setPickupClose}
             showTimes={wantsPickup}
+            pickupToggle={currentType !== 'ltl' && accessorialOptions.some(o => o.value === 'pickup')
+              ? { checked: selectedAccessorials.includes('pickup'), onChange: () => toggleAccessorial('pickup') }
+              : undefined}
           />
 
           {currentType === 'envelope' && (
@@ -744,9 +812,9 @@ export default function QuotePage() {
                 <div className="field"><label>Pieces</label><input type="number" value={piecesParcel} min="1" onChange={e => setPiecesParcel(e.target.value)} /></div>
               </div>
               <div className="grid3">
-                <div className="field"><label>Length (in)</label><input type="number" value={dimLParcel} onChange={e => setDimLParcel(e.target.value)} /></div>
-                <div className="field"><label>Width (in)</label><input type="number" value={dimWParcel} onChange={e => setDimWParcel(e.target.value)} /></div>
-                <div className="field"><label>Height (in)</label><input type="number" value={dimHParcel} onChange={e => setDimHParcel(e.target.value)} /></div>
+                <div className="field"><label>Length (in)</label><input type="number" min="0.1" step="any" value={dimLParcel} onChange={e => setDimLParcel(e.target.value)} /></div>
+                <div className="field"><label>Width (in)</label><input type="number" min="0.1" step="any" value={dimWParcel} onChange={e => setDimWParcel(e.target.value)} /></div>
+                <div className="field"><label>Height (in)</label><input type="number" min="0.1" step="any" value={dimHParcel} onChange={e => setDimHParcel(e.target.value)} /></div>
               </div>
             </div>
           )}
@@ -757,9 +825,13 @@ export default function QuotePage() {
             </div>
           )}
 
+          <div className={s.measureNotice} role="note">
+            <strong>Accurate measurements matter.</strong> {MEASUREMENTS_NOTICE}
+          </div>
+
           <div className="grid2" style={{ marginBottom: '14px' }}>
-            <div className="field"><label>Declared value ($)</label><input type="number" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
-              {isParcelType && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Extends the carrier&apos;s liability to this value; carriers may add a charge.</div>}
+            <div className="field"><label>Declared value ($)</label><input type="number" min="0" step="any" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
+              {isParcelType && <div className={s.hint}>Extends the carrier&apos;s liability to this value; carriers may add a charge.</div>}
             </div>
             <div className="field"><label>Commodity</label><input value={commodity} onChange={e => setCommodity(e.target.value)} /></div>
           </div>
@@ -806,7 +878,7 @@ export default function QuotePage() {
                   {homeDeliveryType === 'date_certain' && (
                     <input type="date" style={{ marginTop: 6 }} min={getFields().pickupDate || today} value={homeDeliveryDate} onChange={e => setHomeDeliveryDate(e.target.value)} />
                   )}
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>For US residential deliveries only.</div>
+                  <div className={s.hint}>For US residential deliveries only.</div>
                 </div>
               )}
               {parcelHas('hazmat') && (
@@ -826,13 +898,13 @@ export default function QuotePage() {
                       </select>
                     </div>
                   )}
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Class and UN number are entered when the shipment is booked.</div>
+                  <div className={s.hint}>Class and UN number are entered when the shipment is booked.</div>
                 </div>
               )}
             </div>
           )}
           {currentType === 'ltl' && (
-            <div style={{ fontSize: 11, color: 'var(--text3)', margin: '6px 0 0' }}>LTL deliveries are always signed for, so no signature option is needed.</div>
+            <div className={s.hint}>LTL deliveries are always signed for, so no signature option is needed.</div>
           )}
           {currentType === 'ltl' && selectedAccessorials.some(a => a.startsWith('limited_access')) && (
             <div className="field" style={{ margin: '10px 0 4px', maxWidth: 320 }}>
@@ -841,14 +913,14 @@ export default function QuotePage() {
                 <option value="">Select the type of site</option>
                 {LIMITED_ACCESS_SITES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
-              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Some carriers price limited access by the type of site.</div>
+              <div className={s.hint}>Some carriers price limited access by the type of site.</div>
             </div>
           )}
           {isParcelType && (
             <div style={{ ...FEDEX_DISCLAIMER_STYLE, margin: '10px 0 0' }}>{FEDEX_DISCLAIMER}</div>
           )}
           {parcelHas('saturday_pickup') && (
-            <div style={{ fontSize: 11, color: 'var(--text3)', margin: '6px 0 0' }}>
+            <div className={s.hint}>
               Saturday pickup needs a Saturday pickup date; carriers that can&apos;t pick up on that day won&apos;t be shown.
             </div>
           )}
@@ -857,9 +929,9 @@ export default function QuotePage() {
             {validating ? (
               <><span className="spinner" /> Validating addresses&hellip;</>
             ) : loading ? (
-              <><span className="spinner" /> Fetching&hellip;</>
+              <><span className="spinner" /> Getting rates&hellip;</>
             ) : (
-              <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Get quotes from all carriers</>
+              <>Compare carrier rates</>
             )}
           </button>
         </div>
@@ -869,7 +941,6 @@ export default function QuotePage() {
       {isSpot && (
         <div>
           <div className={s.spotInfo}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: '1px', color: 'var(--amber)' }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <div className={s.spotInfoText}>
               <h4>{SPOT_LABELS[currentType]?.title}</h4>
               <p>{SPOT_LABELS[currentType]?.desc}</p>
@@ -887,7 +958,7 @@ export default function QuotePage() {
             <>
               <div className="grid2" style={{ marginBottom: '14px' }}>
                 <div className="field"><label>Total weight (kg) *</label><input type="number" min="0" step="any" value={spotWeight} onChange={e => setSpotWeight(e.target.value)} /></div>
-                <div className="field"><label>Total pieces</label><input value={groupTotals(spotGroups, spotWeight).pieces || ''} readOnly tabIndex={-1} style={{ background: 'var(--off-white)' }} /></div>
+                <div className="field"><label>Total pieces</label><input value={groupTotals(spotGroups, spotWeight).pieces || ''} readOnly tabIndex={-1} className={s.readonly} /></div>
               </div>
               <PackageGroups groups={spotGroups} onChange={setSpotGroups} totalWeightKg={spotWeight} />
             </>
@@ -906,52 +977,73 @@ export default function QuotePage() {
             </>
           )}
 
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>Quoted rates are estimates and may be subject to adjustment based on actual shipment details and carrier surcharges.</div>
+          <div className={s.hint}>Quoted rates are estimates and may be subject to adjustment based on actual shipment details and carrier surcharges.</div>
           <button className={s.btnSpotSubmit} onClick={submitSpotRate} disabled={spotSubmitting}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            {spotSubmitting ? 'Sending…' : 'Send spot rate request to IFF Cargo'}
+            {spotSubmitting ? <><span className="spinner" /> Sending&hellip;</> : 'Send request to IFF'}
           </button>
 
-          {spotError && <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 12 }}>{spotError}</div>}
+          {spotError && <div className={s.errorText} role="alert">{spotError}</div>}
           {spotResult && (
             <div className={s.successBox}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              <div><strong>Request {spotResult.requestNumber} sent!</strong> Our team will review your shipment and respond with a quote within 2–4 business hours. You&apos;ll find the price, and can book it, under <Link href="/portal/spot-rates">Spot-rate requests</Link>. Call us at <strong>416 798 4151</strong> if you need an urgent response.</div>
+              <div><strong>Request {spotResult.requestNumber} sent.</strong> Our team will review your shipment and respond with a quote within 2–4 business hours. You&apos;ll find the price, and can book it, under <Link href="/portal/spot-rates">Spot-rate requests</Link>. Call us at <strong>416 798 4151</strong> if you need an urgent response.</div>
             </div>
           )}
         </div>
       )}
 
+    </section>
+
       {/* Loading */}
       {loading && (
-        <div className={s.loadingRow}><div className={s.loadingSpinner} /> Querying all carriers&hellip;</div>
+        <div className={s.loadingRow} role="status"><div className={s.loadingSpinner} /> Asking every carrier for a rate&hellip;</div>
       )}
 
       {/* Results */}
       {results && (
-        <div style={{ marginTop: '20px' }}>
+        <section className={s.results} aria-label="Carrier rates">
+          <div className={s.resultsHead}>
           <div className={s.resultsSummary}>
-            {results.summary.count} quotes &middot; {results.summary.orig} &rarr; {results.summary.dest} &middot; {results.summary.type} &middot; {results.summary.weight} lbs
+            <h2 className={s.resultsTitle}>{results.summary.count} {results.summary.count === 1 ? 'rate' : 'rates'}, {results.summary.orig} &rarr; {results.summary.dest}</h2>
+            <div className={s.resultsMeta}><span>{results.summary.type}</span><span>{results.summary.weight} lb</span></div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>All rates shown are estimates and may be subject to adjustment based on actual shipment weight, dimensions, and carrier surcharges.</div>
+          {(() => {
+            const cur = viewCurrency || (results.request?.origin?.country === 'US' ? 'USD' : 'CAD');
+            return (
+              <div className={s.currencyBar}>
+                <span>Show prices in</span>
+                <div className={s.currencyToggle} role="radiogroup" aria-label="Currency">
+                  {['CAD', 'USD'].map(c => (
+                    <button key={c} type="button" role="radio" aria-checked={cur === c} className={cur === c ? s.currencyOn : ''} onClick={() => chooseCurrency(c)}>{c}</button>
+                  ))}
+                </div>
+                <span className={s.currencyNote}>US$1 = C${Number(results.usdToCad || DEFAULT_USD_TO_CAD).toFixed(2)}. You pay in the currency shown.</span>
+              </div>
+            );
+          })()}
+          </div>
+          <div className={s.measureNoticeSmall}>{RESULTS_NOTICE}</div>
           {results.quotes.length === 0 && (
-            <div style={{ background: 'var(--off-white)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', color: 'var(--text2)', fontSize: 13 }}>
-              No live carrier rates are available for this route right now. Try adjusting the shipment details, or submit a spot rate request and our team will get back to you.
+            <div className={s.emptyState}>
+              No carrier has a rate for this route right now. Check the shipment details and try again, or choose a spot-rate type above and IFF will price it for you.
             </div>
           )}
           {results.quotes.map((r, i) => {
             const isBest = i === 0 && !r.notIncluded;
             const best = results.quotes[0];
-            // "vs best" only makes sense against a rate in the same currency.
-            const savings = i > 0 && r.currency === best.currency ? (r.displayRate - best.displayRate).toFixed(2) : null;
-            const sym = r.currency === 'USD' ? 'US$' : 'C$';
+            // Everything is shown (and paid) in the customer's chosen currency.
+            const cur = viewCurrency || (results.request?.origin?.country === 'US' ? 'USD' : 'CAD');
+            const other = cur === 'CAD' ? 'USD' : 'CAD';
+            const priceIn = (q, c) => q.prices?.[c] ?? q.displayRate;
+            const amount = priceIn(r, cur);
+            const savings = i > 0 ? (amount - priceIn(best, cur)).toFixed(2) : null;
+            const sym = curSym(cur);
             const transitStr = r.transitDays ? `${r.transitDays}–${parseInt(r.transitDays) + 1} business days` : '—';
             const canBook = !!(r.quoteId && r.quoteRateId);
             const bookState = r.quoteRateId ? booking[r.quoteRateId] : undefined;
 
             return (
               <div key={i} className={`${s.resultCard} ${isBest ? s.best : ''}`}>
-                {isBest && <div className={s.bestFlag}>&#9733; BEST RATE</div>}
+                {isBest && <div className={s.bestFlag}>Lowest price</div>}
                 <CarrierLogo
                   id={r.carrier.id}
                   label={r.carrier.abbr}
@@ -962,47 +1054,63 @@ export default function QuotePage() {
                 <div className={s.ri}>
                   <div className={s.riName}>
                     {r.carrier.name}
-                    <span className={r.live ? s.liveTag : s.simTag}>{r.live ? '● live' : '~ est.'}</span>
+                    <span className={r.live ? s.liveTag : s.simTag}>{r.live ? 'Live rate' : 'Estimate'}</span>
                   </div>
                   <div className={s.riSvc}>{r.service}</div>
                   <div className={s.riMeta}>
-                    <span className={s.riChip}>&#9201; {transitStr}</span>
-                    {r.deliveryDate && <span className={`${s.riChip} ${s.riChipDelivery}`}>&#128197; Est. {r.deliveryDate}</span>}
+                    <span className={s.riChip}>{transitStr}</span>
+                    {r.deliveryDate && <span className={`${s.riChip} ${s.riChipDelivery}`}>Delivery by {r.deliveryDate}</span>}
                   </div>
                   {r.notIncluded && (
                     <div className={s.notIncluded}>
-                      &#9888; Not included: <b>{r.notIncluded.labels.join(', ')}</b>. {r.notIncluded.message}
+                      Not included: <b>{r.notIncluded.labels.join(', ')}</b>. {r.notIncluded.message}
                     </div>
                   )}
                   {r.carrier.id === 'fedex' && <div style={{ ...FEDEX_DISCLAIMER_STYLE, marginTop: 6 }}>{FEDEX_DISCLAIMER}</div>}
-                  {r.carrier.id === 'dhl' && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>{DHL_DISCLAIMER}</div>}
+                  {r.carrier.id === 'dhl' && <div className={s.hint}>{DHL_DISCLAIMER}</div>}
                 </div>
                 <div className={s.rr}>
-                  <div className={s.rrAmount}>{sym}{r.displayRate.toFixed(2)}</div>
-                  <div className={s.rrCur}>{r.currency}</div>
-                  {!isBest && savings !== null && <div className={s.rrSavings}>+${savings} vs best</div>}
+                  <div className={s.rrAmount}>{sym}{amount.toFixed(2)}</div>
+                  <div className={s.rrCur}>{cur}</div>
+                  <div className={s.rrOther}>≈ {curSym(other)}{priceIn(r, other).toFixed(2)} {other}</div>
+                  {!isBest && savings !== null && Number(savings) > 0 && <div className={s.rrSavings}>+{sym}{savings} vs best</div>}
                   <button
                     className={s.btnBook}
                     disabled={!canBook || bookState === 'loading' || bookState === 'booked'}
-                    onClick={() => setConfirmRate(r)}
+                    onClick={() => setConfirmRate({ ...r, displayRate: amount, currency: cur, chargeCurrency: cur, carrierCurrency: r.currency })}
                     title={!canBook ? 'Sign in to book this rate' : undefined}
                   >
-                    {bookState === 'loading' ? 'Booking…' : bookState === 'booked' ? 'Booked ✓' : canBook ? 'Book this rate →' : 'Sign in to book'}
+                    {bookState === 'loading' ? 'Booking…' : bookState === 'booked' ? 'Booked' : canBook ? 'Book' : 'Sign in to book'}
                   </button>
                   {bookState === 'booked' && labels[r.quoteRateId] && (
                     <button className={s.btnLabel} onClick={() => downloadLabel(r.quoteRateId)}>
-                      Download Label ({labels[r.quoteRateId].docType})
+                      Download label ({labels[r.quoteRateId].docType})
                     </button>
                   )}
+                  {bookState === 'booked' && reserved[r.quoteRateId] && (() => {
+                    const res = reserved[r.quoteRateId];
+                    if (res.paid) return <div className={s.note}>Paid and booked with {r.carrier.name}</div>;
+                    if (res.cancelled) return <div className={`${s.note} ${s.noteDanger}`}>Reservation cancelled: not paid in time</div>;
+                    return (
+                      <div className={`${s.note} ${s.noteWarning}`}>
+                        Awaiting payment. Pay by {new Date(res.payBy).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}
+                        <div className={s.noteActions}>
+                          {res.link && <a className={s.btnLabel} href={res.link} target="_blank" rel="noopener noreferrer">Open payment page</a>}
+                          {res.sandbox && <button className={s.btnLabel} disabled={res.checking} onClick={() => testReservedPayment(r.quoteRateId)}>Test payment (sandbox)</button>}
+                          <button className={s.btnLabel} disabled={res.checking} onClick={() => checkReservedPayment(r.quoteRateId)}>{res.checking ? 'Checking…' : 'Check payment'}</button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {bookState === 'booked' && pickups[r.quoteRateId] && (
-                    <div style={{ fontSize: 11, marginTop: 4, color: pickups[r.quoteRateId].scheduled ? 'var(--text3)' : '#b45309' }}>
+                    <div className={`${s.note} ${pickups[r.quoteRateId].scheduled ? '' : s.noteWarning}`}>
                       {pickups[r.quoteRateId].scheduled
-                        ? `Pickup booked · confirmation ${pickups[r.quoteRateId].confirmationNumber}`
+                        ? `Pickup booked, confirmation ${pickups[r.quoteRateId].confirmationNumber}`
                         : `Pickup not scheduled yet. ${pickups[r.quoteRateId].message}`}
                     </div>
                   )}
                   {bookState === 'booked' && !labels[r.quoteRateId] && r.carrier.id === 'csa' && (
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>CSA does not provide shipping labels via API</div>
+                    <div className={s.note}>CSA doesn&apos;t provide labels online.</div>
                   )}
                 </div>
               </div>
@@ -1024,7 +1132,7 @@ export default function QuotePage() {
               <div className={s.rr}><div className={s.rrCur}>Not available</div></div>
             </div>
           ))}
-        </div>
+        </section>
       )}
       {confirmRate && (
         <BookingModal

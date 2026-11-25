@@ -2,12 +2,9 @@ const Invoice = require('../models/Invoice');
 
 // Generate a sequential invoice number (INV-YYYYMM-NNNN)
 async function generateInvoiceNumber() {
+  const { nextNumber } = require('../utils/trackingGenerator');
   const now = new Date();
-  const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const count = await Invoice.countDocuments({
-    invoiceNumber: { $regex: `^${prefix}` },
-  });
-  return `${prefix}-${String(count + 1).padStart(4, '0')}`;
+  return nextNumber(Invoice, 'invoiceNumber', `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-`, 4);
 }
 
 // Create an invoice for a booking (called automatically after successful booking)
@@ -18,14 +15,15 @@ async function createInvoiceForBooking(booking, companyId, userId) {
     invoiceNumber,
     company: companyId,
     user: userId,
-    totalAmount: booking.sellRate,
-    currency: booking.currency,
+    // What the customer pays, in the currency they chose.
+    totalAmount: booking.chargeAmount ?? booking.sellRate,
+    currency: booking.chargeCurrency || booking.currency,
     status: booking.paymentStatus === 'paid' ? 'paid' : 'pending',
     paidAt: booking.paymentStatus === 'paid' ? new Date() : undefined,
     items: [{
       booking: booking._id,
       description: `${booking.carrierName} ${booking.serviceName} — Booking ${booking.bookingNumber}`,
-      amount: booking.sellRate,
+      amount: booking.chargeAmount ?? booking.sellRate,
     }],
   });
 

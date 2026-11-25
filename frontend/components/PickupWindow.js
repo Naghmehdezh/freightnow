@@ -1,11 +1,11 @@
 'use client';
 
-// Pickup date plus the window the freight is ready: between 08:00 and 17:00, at least 4 hours
-// (ready at 08:00 → close no earlier than 12:00). Times are local to the pickup address.
+// Pickup date plus the window the freight is ready: between 08:00 and 17:00, at least 3 hours
+// (ready at 08:00 → close no earlier than 11:00). Times are local to the pickup address.
 
 const EARLIEST = 8 * 60;
 const LATEST = 17 * 60;
-const MIN_WINDOW = 4 * 60;
+const MIN_WINDOW = 3 * 60;
 const STEP = 30;
 
 const toTime = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -26,18 +26,26 @@ export const closeTimesFor = ready => (ready ? times(toMinutes(ready) + MIN_WIND
 
 // showTimes: LTL always (a pickup is part of every LTL shipment); parcels and envelopes only with
 // the Pickup option — otherwise the date is just the ship date.
-export default function PickupWindow({ date, onDateChange, ready, onReadyChange, close, onCloseChange, showTimes = true }) {
+// pickupToggle ({ checked, onChange }): envelopes and parcels — a "Request a pickup" switch next to the
+// date, tied to the Pickup option, so the ready/close times are easy to find.
+export default function PickupWindow({ date, onDateChange, ready, onReadyChange, close, onCloseChange, showTimes = true, pickupToggle }) {
   const closeOptions = closeTimesFor(ready);
 
   function changeReady(value) {
     onReadyChange(value);
-    // Keep the close time only if it still leaves a 4-hour window.
+    // Keep the close time only if it still leaves a 3-hour window.
     if (close && !closeTimesFor(value).includes(close)) onCloseChange('');
   }
 
   return (
     <div className="grid4" style={{ marginBottom: '10px' }}>
       <div className="field"><label>{showTimes ? 'Pickup date' : 'Ship date'}</label><input type="date" value={date} onChange={e => onDateChange(e.target.value)} /></div>
+      {pickupToggle && (
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'end', height: 'var(--h-md)', cursor: 'pointer', fontSize: 'var(--fs-base)', color: 'var(--ink)' }}>
+          <input type="checkbox" checked={pickupToggle.checked} onChange={pickupToggle.onChange} />
+          Request a pickup
+        </label>
+      )}
       {showTimes && <>
       <div className="field">
         <label>Ready time</label>
@@ -53,8 +61,8 @@ export default function PickupWindow({ date, onDateChange, ready, onReadyChange,
           {closeOptions.map(t => <option key={t} value={t}>{label(t)}</option>)}
         </select>
       </div>
-      <div className="field" style={{ alignSelf: 'end', fontSize: '12px', color: 'var(--text-muted, #6b7280)', paddingBottom: '10px' }}>
-        Pickup between 8 AM and 5 PM, at least a 4-hour window.
+      <div className="field" style={{ alignSelf: 'end', fontSize: 'var(--fs-xs)', color: 'var(--mute)', paddingBottom: '10px' }}>
+        Pickup between 8 AM and 5 PM, at least a 3-hour window.
       </div>
       </>}
     </div>

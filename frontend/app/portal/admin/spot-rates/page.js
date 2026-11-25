@@ -100,7 +100,7 @@ export default function SpotRatesAdminPage() {
                   <tr className={a.groupStart}>
                     <td>
                       <button className={a.linkBtn} onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? '▾' : '▸'} <span className={a.mono}>{r.requestNumber}</span></button>
-                      <div className={a.small}>{TYPE[r.shipmentType]} · {day(r.submittedAt)}</div>
+                      <div className={a.small}>{TYPE[r.shipmentType]}, {day(r.submittedAt)}</div>
                     </td>
                     <td>
                       <div>{r.customer.company || r.customer.name || '—'}</div>
@@ -111,28 +111,28 @@ export default function SpotRatesAdminPage() {
                       <div className={a.small}>→ {end(r.destination)}</div>
                     </td>
                     <td>
-                      <div>{r.weight ? `${Number(r.weight).toLocaleString('en-CA')} ${r.weightUnit}` : '—'}{r.skids ? ` · ${r.skids} skids` : r.pieces ? ` · ${r.pieces} pcs` : ''}</div>
-                      <div className={a.small}>{[AIR[r.airService], r.oceanType].filter(Boolean).join(' · ')}</div>
+                      <div>{r.weight ? `${Number(r.weight).toLocaleString('en-CA')} ${r.weightUnit}` : '—'}{r.skids ? `, ${r.skids} skids` : r.pieces ? `, ${r.pieces} pcs` : ''}</div>
+                      <div className={a.small}>{[AIR[r.airService], r.oceanType].filter(Boolean).join(', ')}</div>
                     </td>
                     <td><span className={`${a.badge} ${st.cls}`}>{st.label}</span></td>
                     <td className={a.num}>
                       {r.price != null ? (
                         <>
                           <div className={s.price}>{money(r.price)} {r.currency}</div>
-                          <div className={a.small}>cost {money(r.carrierCost)} · margin {money(r.price - r.carrierCost)}</div>
+                          <div className={a.small}>cost {money(r.carrierCost)}, margin {money(r.price - r.carrierCost)}</div>
                         </>
                       ) : '—'}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {canPrice && <button className={a.linkBtn} onClick={() => setPricing(r)}>{r.status === 'pending' ? 'Price' : 'Re-price'}</button>}
-                      {canPrice && <> · <button className={a.linkBtn} onClick={() => setDeclining(r)}>Decline</button></>}
+                      {canPrice && <> <button className={a.linkBtn} onClick={() => setDeclining(r)}>Decline</button></>}
                     </td>
                   </tr>
                   {open === r.id && (
                     <tr>
                       <td colSpan={7}>
                         <div className={a.breakdown}>
-                          <div><span>Customer</span><b>{[r.customer.name, r.customer.phone].filter(Boolean).join(' · ') || '—'}</b></div>
+                          <div><span>Customer</span><b>{[r.customer.name, r.customer.phone].filter(Boolean).join(', ') || '—'}</b></div>
                           {(r.origin.port || r.destination.port) && <div><span>Ports</span><b>{r.origin.port || '—'} → {r.destination.port || '—'}</b></div>}
                           {r.oceanType && <div><span>Ocean service</span><b>{r.oceanType}</b></div>}
                           {r.origin.street && <div><span>Pickup address</span><b>{[r.origin.street, r.origin.city, r.origin.province, r.origin.postalCode].filter(Boolean).join(', ')}</b></div>}
@@ -220,7 +220,7 @@ function PriceModal({ request, onClose, onSaved }) {
     <div className={a.overlay} onClick={onClose}>
       <div className={a.modal} onClick={e => e.stopPropagation()}>
         <div className={a.cardTitle}>{request.price != null ? 'Re-price' : 'Price'} {request.requestNumber}</div>
-        <div className={a.sub}>{TYPE[request.shipmentType]} · {end(request.origin)} → {end(request.destination)}{request.weight ? ` · ${request.weight} ${request.weightUnit}` : ''}{request.chargeableWeightKg != null ? ` (chargeable ${request.chargeableWeightKg} kg)` : ''}</div>
+        <div className={a.sub}>{TYPE[request.shipmentType]}, {end(request.origin)} → {end(request.destination)}{request.weight ? `, ${request.weight} ${request.weightUnit}` : ''}{request.chargeableWeightKg != null ? ` (chargeable ${request.chargeableWeightKg} kg)` : ''}</div>
         {request.price != null && <div className={a.info}>Saving replaces the price the customer was sent.</div>}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

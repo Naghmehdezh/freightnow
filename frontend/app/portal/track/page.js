@@ -7,23 +7,23 @@ import { FEDEX_DISCLAIMER, FEDEX_DISCLAIMER_STYLE } from '@/lib/fedexCompliance'
 
 const MOCK_SHIPMENTS = {
   '1Z999AA1234567890': { carrier: 'FedEx Freight', route: 'Toronto, ON → Chicago, IL', delivery: 'May 24, 2026', service: 'Freight Economy', weight: '500 lbs', pieces: '2 pallets', status: 'delivered', events: [
-    { event: 'Delivered', location: 'Chicago, IL', time: 'May 24, 2026 · 10:42 AM', done: true, active: false },
-    { event: 'Out for delivery', location: 'Chicago, IL', time: 'May 24, 2026 · 7:15 AM', done: true, active: false },
-    { event: 'Arrived at destination facility', location: 'Chicago, IL', time: 'May 23, 2026 · 11:30 PM', done: true, active: false },
-    { event: 'In transit', location: 'Indianapolis, IN', time: 'May 23, 2026 · 3:20 PM', done: true, active: false },
-    { event: 'Departed origin facility', location: 'Toronto, ON', time: 'May 20, 2026 · 6:00 PM', done: true, active: false },
-    { event: 'Picked up', location: 'Toronto, ON', time: 'May 20, 2026 · 2:30 PM', done: true, active: false },
+    { event: 'Delivered', location: 'Chicago, IL', time: 'May 24, 2026 at 10:42 AM', done: true, active: false },
+    { event: 'Out for delivery', location: 'Chicago, IL', time: 'May 24, 2026 at 7:15 AM', done: true, active: false },
+    { event: 'Arrived at destination facility', location: 'Chicago, IL', time: 'May 23, 2026 at 11:30 PM', done: true, active: false },
+    { event: 'In transit', location: 'Indianapolis, IN', time: 'May 23, 2026 at 3:20 PM', done: true, active: false },
+    { event: 'Departed origin facility', location: 'Toronto, ON', time: 'May 20, 2026 at 6:00 PM', done: true, active: false },
+    { event: 'Picked up', location: 'Toronto, ON', time: 'May 20, 2026 at 2:30 PM', done: true, active: false },
   ]},
   '1Z888BB9876543210': { carrier: 'Day & Ross', route: 'Mississauga, ON → Detroit, MI', delivery: 'May 26, 2026', service: 'Freight Priority', weight: '180 lbs', pieces: '3 boxes', status: 'transit', events: [
     { event: 'Delivered', location: 'Detroit, MI', time: 'Estimated May 26, 2026', done: false, active: false },
-    { event: 'In transit', location: 'Windsor, ON', time: 'May 25, 2026 · 4:45 AM', done: false, active: true },
-    { event: 'Departed origin facility', location: 'Mississauga, ON', time: 'May 22, 2026 · 8:00 PM', done: true, active: false },
-    { event: 'Picked up', location: 'Mississauga, ON', time: 'May 22, 2026 · 3:15 PM', done: true, active: false },
+    { event: 'In transit', location: 'Windsor, ON', time: 'May 25, 2026 at 4:45 AM', done: false, active: true },
+    { event: 'Departed origin facility', location: 'Mississauga, ON', time: 'May 22, 2026 at 8:00 PM', done: true, active: false },
+    { event: 'Picked up', location: 'Mississauga, ON', time: 'May 22, 2026 at 3:15 PM', done: true, active: false },
   ]},
   'MAN-2026-00481': { carrier: 'Manitoulin Transport', route: 'Toronto, ON → Montreal, QC', delivery: 'May 27, 2026', service: 'Standard LTL', weight: '240 lbs', pieces: '2 boxes', status: 'transit', events: [
     { event: 'Delivered', location: 'Montreal, QC', time: 'Estimated May 27, 2026', done: false, active: false },
-    { event: 'In transit', location: 'Kingston, ON', time: 'May 25, 2026 · 9:10 AM', done: false, active: true },
-    { event: 'Picked up', location: 'Toronto, ON', time: 'May 23, 2026 · 11:00 AM', done: true, active: false },
+    { event: 'In transit', location: 'Kingston, ON', time: 'May 25, 2026 at 9:10 AM', done: false, active: true },
+    { event: 'Picked up', location: 'Toronto, ON', time: 'May 23, 2026 at 11:00 AM', done: true, active: false },
   ]},
   'POL-2026-00192': { carrier: 'Polaris Transport', route: 'Brampton, ON → Ottawa, ON', delivery: 'May 27, 2026', service: 'Ground', weight: '45 lbs', pieces: '1 box', status: 'pending', events: [
     { event: 'Delivered', location: 'Ottawa, ON', time: 'Estimated May 27, 2026', done: false, active: false },
@@ -78,30 +78,31 @@ function TrackPageInner() {
   }
 
   function getStatusLabel(status) {
-    if (status === 'delivered') return '✓ Delivered';
-    if (status === 'transit' || status === 'in_transit') return '↦ In transit';
-    return '○ Pending pickup';
+    if (status === 'delivered') return 'Delivered';
+    if (status === 'transit' || status === 'in_transit') return 'In transit';
+    return 'Waiting for pickup';
   }
 
   return (
-    <div style={{ maxWidth: '860px' }}>
+    <div className={s.page}>
       <div className="section-card">
-        <div className={s.searchRow}>
+        <form className={s.searchRow} onSubmit={e => { e.preventDefault(); doTrack(); }} role="search">
+          <label htmlFor="tracking-input" className="sr-only">Tracking number</label>
           <input
+            id="tracking-input"
             className={s.trackInput}
-            placeholder="Enter tracking number (e.g. 1Z999AA1234567890)"
+            placeholder="IFF or carrier tracking number, e.g. IFF-2026-00058"
             value={trackingNumber}
             onChange={e => setTrackingNumber(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && doTrack()}
           />
-          <button className={s.btnTrack} onClick={() => doTrack()}>Track</button>
-        </div>
+          <button type="submit" className={s.btnTrack}>Track</button>
+        </form>
       </div>
 
       {notFound && (
         <div className="section-card">
           <div className={s.emptyTrack}>
-            <p>No shipment found for &ldquo;{trackingNumber}&rdquo;. Please check the number and try again.</p>
+            <p>No shipment matches &ldquo;{trackingNumber}&rdquo;. Check the number and try again.</p>
           </div>
         </div>
       )}
@@ -110,9 +111,9 @@ function TrackPageInner() {
         <div className="section-card">
           <div className={s.resultHeader}>
             <div>
-              <div className={s.trackingNum}>{trackingNumber}</div>
+              <div className={`${s.trackingNum} ref`}>{trackingNumber}</div>
               {result.carrierTrackingNumber && result.carrierTrackingNumber !== trackingNumber && (
-                <div className={s.routeLine} style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>Carrier tracking: {result.carrierTrackingNumber}</div>
+                <div className={s.routeLine}>Carrier tracking <span className="ref">{result.carrierTrackingNumber}</span></div>
               )}
               <div className={s.carrierLine}>{result.carrier}</div>
               <div className={s.routeLine}>{result.route}</div>
@@ -123,7 +124,7 @@ function TrackPageInner() {
           </div>
 
           <div className={s.infoGrid}>
-            <div className={s.infoItem}><label>Est. delivery</label><span>{result.delivery}</span></div>
+            <div className={s.infoItem}><label>Estimated delivery</label><span>{result.delivery}</span></div>
             <div className={s.infoItem}><label>Service</label><span>{result.service}</span></div>
             <div className={s.infoItem}><label>Weight</label><span>{result.weight}</span></div>
             <div className={s.infoItem}><label>Pieces</label><span>{result.pieces}</span></div>
@@ -134,9 +135,6 @@ function TrackPageInner() {
             {result.events?.map((ev, i) => (
               <div key={i} className={s.timelineItem}>
                 <div className={`${s.tlDot} ${ev.done ? s.tlDotDone : ev.active ? s.tlDotActive : ''}`}>
-                  {(ev.done || ev.active) && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                  )}
                 </div>
                 <div className={s.tlContent}>
                   <div className={s.tlEvent}>{ev.event}</div>

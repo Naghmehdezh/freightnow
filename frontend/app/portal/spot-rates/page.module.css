@@ -1,6 +1,16 @@
-/* Extra badges for spot-rate statuses (shared by the customer and IFF staff pages). */
-.badgeAmber { background: var(--amber-light); color: var(--amber); }
-.badgeRed { background: var(--red-light); color: var(--red); }
-.price { font-family: var(--mono); font-weight: 700; color: var(--navy); white-space: nowrap; }
-.note { font-size: 12px; color: var(--text2); margin-top: 4px; max-width: 280px; }
-.successMsg { background: var(--green-light); color: var(--green); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+/* Extra statuses for spot-rate and request pages (on top of the shared admin styles). */
+.badgeAmber::before { background: #d08a12 !important; }
+.badgeRed { color: var(--danger) !important; }
+.badgeRed::before { background: var(--danger) !important; }
+.price { font-weight: 600; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.note { margin-top: 4px; max-width: 280px; font-size: var(--fs-xs); line-height: 1.45; color: var(--slate); }
+.successMsg {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--success-bg);
+  border: 1px solid var(--success-line);
+  border-left: 3px solid var(--success);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: #0f4f2a;
+}

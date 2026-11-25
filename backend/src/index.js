@@ -38,6 +38,8 @@ app.use(errorHandler);
 
 async function start() {
   await connectDB();
+  require('./jobs/statements').startStatementsJob(); // monthly statements + account holds
+  require('./jobs/linkPayments').startLinkPaymentsJob(); // QuickBooks pay-link bookings
   app.listen(config.port, () => {
     console.log(`IFF Cargo backend running on port ${config.port}`);
   });

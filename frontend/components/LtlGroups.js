@@ -58,14 +58,14 @@ export default function LtlGroups({ groups, onChange }) {
             </div>
             <div className={s.groupFoot}>
               Group weight: <b>{groupWeight ? `${groupWeight.toLocaleString('en-CA')} lb` : '—'}</b>
-              {cls?.density != null && <> · Density: <b>{cls.density} lb/ft³</b></>}
+              {cls?.density != null && <>, density <b>{cls.density} lb/ft³</b></>}
             </div>
           </div>
         );
       })}
       <button type="button" className={s.add} onClick={() => onChange([...groups, emptyLtlGroup()])}>+ Add group</button>
       <div className={s.totals}>
-        Total pieces: <b>{totals.pieces}</b> · Total weight: <b>{totals.weight.toLocaleString('en-CA')} lb</b>
+        Total pieces: <b>{totals.pieces}</b>, total weight <b>{totals.weight.toLocaleString('en-CA')} lb</b>
       </div>
     </div>
   );

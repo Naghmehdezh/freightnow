@@ -84,6 +84,21 @@ cd frontend && npm run dev
 ```
 Then open http://localhost:3000 in your browser.
 
+## Running with Docker
+`docker-compose.yml` (repo root) runs MongoDB (single-node replica set, initialised automatically),
+the API (`backend/Dockerfile`, built from the repo root) and the web app (`frontend/Dockerfile`,
+Next.js standalone output).
+```bash
+cp backend/.env.example backend/.env       # fill in credentials (never copied into an image)
+docker compose up -d --build               # http://localhost:3000, API on :4000
+docker compose run --rm api npm run db:seed   # first time only
+docker compose logs -f api                 # dev emails / OTP codes print here
+```
+- `NEXT_PUBLIC_API_URL` (the API address as browsers see it) is baked into the web image at build
+  time: `NEXT_PUBLIC_API_URL=https://api.example.com docker compose build web`.
+- For a real domain also set `FRONTEND_URL`, `QB_REDIRECT_URI`, and add the domain to the Auth0
+  application's allowed callback, logout and web-origin URLs.
+
 ## Stopping Everything
 ```bash
 # Stop the frontend: Ctrl+C in the terminal running frontend npm run dev
@@ -103,7 +118,7 @@ brew services stop mongodb-community@6.0
 - **Database:** MongoDB 6.0 (via Homebrew, running as a single-node replica set for transactions)
 - **Auth:** JWT + bcrypt (token stored in localStorage), plus a mandatory email-OTP second factor after password login
 - **Validation:** Zod
-- **Fonts:** Outfit (display), DM Sans (body), JetBrains Mono (mono)
+- **Design system:** tokens and shared components in `frontend/app/globals.css` (petrol `#0c3d5c` brand colour from the logo, neutral greys, semantic colours only for status; 4px controls / 6px panels; borders instead of shadows). Fonts: IBM Plex Sans (UI), IBM Plex Mono (reference numbers only)
 
 ## Frontend Architecture (Next.js)
 - **Framework:** Next.js 16 with App Router (all pages are `'use client'`)

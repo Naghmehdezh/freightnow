@@ -6,52 +6,49 @@ const Invoice = require('../models/Invoice');
 const SpotRateRequest = require('../models/SpotRateRequest');
 const GuestQuoteRequest = require('../models/GuestQuoteRequest');
 
+// Next number in a sequence: the highest existing "<prefix><digits>" + 1. (Counting documents
+// instead would hand out a number that's already taken as soon as any record is deleted, and the
+// unique index would then reject the new booking/quote/etc.)
+async function nextNumber(Model, field, prefix, width) {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rows = await Model.find({ [field]: { $regex: `^${escaped}\\d+$` } }).select(field).lean();
+  const max = rows.reduce((n, r) => Math.max(n, parseInt(String(r[field]).slice(prefix.length), 10) || 0), 0);
+  return `${prefix}${String(max + 1).padStart(width, '0')}`;
+}
+
+const year = () => new Date().getFullYear();
+
 async function generateTrackingNumber() {
-  const year = new Date().getFullYear();
-  const count = await Shipment.countDocuments();
-  const seq = String(count + 1).padStart(5, '0');
-  return `IFF-${year}-${seq}`;
+  return nextNumber(Shipment, 'trackingNumber', `IFF-${year()}-`, 5);
 }
 
 async function generateQuoteNumber() {
-  const year = new Date().getFullYear();
-  const count = await Quote.countDocuments();
-  const seq = String(count + 1).padStart(4, '0');
-  return `Q-${year}-${seq}`;
+  return nextNumber(Quote, 'quoteNumber', `Q-${year()}-`, 4);
 }
 
 async function generateBookingNumber() {
-  const year = new Date().getFullYear();
-  const count = await Booking.countDocuments();
-  const seq = String(count + 1).padStart(4, '0');
-  return `BK-${year}-${seq}`;
+  return nextNumber(Booking, 'bookingNumber', `BK-${year()}-`, 4);
 }
 
 async function generateClaimNumber() {
-  const year = new Date().getFullYear();
-  const count = await Claim.countDocuments();
-  const seq = String(count + 1).padStart(4, '0');
-  return `CLM-${year}-${seq}`;
+  return nextNumber(Claim, 'claimNumber', `CLM-${year()}-`, 4);
 }
 
 async function generateInvoiceNumber() {
-  const year = new Date().getFullYear();
-  const count = await Invoice.countDocuments();
-  const seq = String(count + 1).padStart(4, '0');
-  return `INV-${year}-${seq}`;
+  return nextNumber(Invoice, 'invoiceNumber', `INV-${year()}-`, 4);
 }
 
 async function generateSpotRateNumber() {
-  const year = new Date().getFullYear();
-  const count = await SpotRateRequest.countDocuments();
-  const seq = String(count + 1).padStart(4, '0');
-  return `SPR-${year}-${seq}`;
+  return nextNumber(SpotRateRequest, 'requestNumber', `SPR-${year()}-`, 4);
+}
+
+async function generateAdjustmentNumber() {
+  const Adjustment = require('../models/Adjustment');
+  return nextNumber(Adjustment, 'adjustmentNumber', `ADJ-${year()}-`, 4);
 }
 
 async function generateGuestQuoteNumber() {
-  const year = new Date().getFullYear();
-  const count = await GuestQuoteRequest.countDocuments();
-  return `GQR-${year}-${String(count + 1).padStart(4, '0')}`;
+  return nextNumber(GuestQuoteRequest, 'requestNumber', `GQR-${year()}-`, 4);
 }
 
-module.exports = { generateGuestQuoteNumber, generateTrackingNumber, generateQuoteNumber, generateBookingNumber, generateClaimNumber, generateInvoiceNumber, generateSpotRateNumber };
+module.exports = { nextNumber, generateAdjustmentNumber, generateGuestQuoteNumber, generateTrackingNumber, generateQuoteNumber, generateBookingNumber, generateClaimNumber, generateInvoiceNumber, generateSpotRateNumber };

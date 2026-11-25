@@ -14,9 +14,23 @@ const bookingSchema = new Schema({
   sellRate: { type: Number, required: true },
   currency: { type: String, default: 'CAD' },
   customerReference: String,
-  paymentStatus: { type: String, default: 'not_required' },
-  status: { type: String, default: 'confirmed' },
+  paymentStatus: { type: String, default: 'not_required' }, // paid | invoiced | awaiting_payment | not_required
+  status: { type: String, default: 'confirmed' }, // confirmed | awaiting_payment | cancelled
+  // What the customer pays, in the currency they chose (CAD or USD), at the quote's locked
+  // exchange rate. sellRate/costRate/currency stay in the carrier's currency (for margin).
+  chargeCurrency: { type: String, enum: ['CAD', 'USD'] },
+  chargeAmount: Number,
+  fxRate: Number, // USD->CAD used
+  // How it was paid: card (form), qb_link (QuickBooks invoice "Pay now" link), account (monthly), credit.
+  paymentMethod: { type: String, enum: ['card', 'qb_link', 'account', 'credit'] },
+  // "Pay with QuickBooks link": the booking is reserved until the invoice is paid (by payBy), then
+  // the carrier is booked with the details from the booking form kept in pendingInput.
+  qbInvoiceId: String,
+  qbInvoiceLink: String,
+  payBy: Date,
+  pendingInput: Schema.Types.Mixed,
   pickupConfirmationNumber: String,
+  measurementsConfirmedAt: Date, // customer confirmed weights/dimensions + accepted price adjustments
   pickupConfirmedAt: Date,
   cancelledAt: Date,
 

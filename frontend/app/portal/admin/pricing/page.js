@@ -112,17 +112,64 @@ function Overview() {
           {/* CAD and USD bookings are never added together — one pair of tiles per currency. */}
           {Object.entries(data.bookedByCurrency || {}).map(([cur, t]) => (
             <Fragment key={cur}>
-              <Tile label={`Booked revenue (${cur})`} value={`$${money(t.sell)} ${cur}`} sub={`${t.shipments} shipments · cost $${money(t.cost)}`} />
-              <Tile label={`Booked gross margin (${cur})`} value={`$${money(t.grossMargin)} ${cur}`} sub={`${pct(t.marginPct)} over cost`} />
+              <Tile label={`Booked revenue (${cur})`} value={`$${money(t.sell)} ${cur}`} sub={`${t.shipments} shipments, cost $${money(t.cost)}`} />
+              <Tile
+                label={`Booked gross margin (${cur})`}
+                value={`$${money(t.grossMargin)} ${cur}`}
+                sub={t.marginAfterCorrections !== t.grossMargin
+                  ? `${pct(t.marginPct)} over cost, $${money(t.marginAfterCorrections)} after carrier corrections`
+                  : `${pct(t.marginPct)} over cost`}
+              />
             </Fragment>
           ))}
           <Tile label="Median markup offered" value={pct(data.medianAchievedMarkupPct)} sub={`average ${pct(data.avgAchievedMarkupPct)}`} />
-          <Tile label="Manually adjusted" value={data.adjustedRates} sub="rate options" />
+          <Tile label="Price overrides" value={data.adjustedRates} sub="rate options priced by hand" />
+          <Tile
+            label="How bookings were paid"
+            value={Object.values(data.paymentMethods || {}).reduce((n, v) => n + v, 0)}
+            sub={Object.entries(data.paymentMethods || {}).map(([k, v]) => `${PAYMENT_METHOD[k] || k} ${v}`).join(', ')}
+          />
         </div>
+      )}
+
+      {data && (
+        <>
+          <div className={s.sectionTitle} style={{ marginTop: 18 }}>Carrier corrections <span className={s.small}>(re-weigh / re-measure / re-class, in this window)</span></div>
+          {Object.keys(data.carrierCorrections || {}).length === 0
+            ? <div className={s.muted}>No carrier corrections in this window.</div>
+            : (
+              <div className={s.tiles}>
+                {Object.entries(data.carrierCorrections).map(([cur, c]) => (
+                  <Fragment key={cur}>
+                    <Tile label={`Corrections (${cur})`} value={c.count} sub={`extra carrier cost $${money(c.extraCost)}`} />
+                    <Tile label={`Collected from customers (${cur})`} value={`$${money(c.collected)}`} sub={c.pending > 0 ? `$${money(c.pending)} still awaiting payment` : 'nothing pending'} />
+                    <Tile label={`Absorbed by IFF (${cur})`} value={`$${money(c.absorbed)}`} sub="within the threshold, or waived" />
+                    <Tile label={`Credited back (${cur})`} value={`$${money(c.credited)}`} sub="carrier charged less" />
+                  </Fragment>
+                ))}
+              </div>
+            )}
+
+          <div className={s.sectionTitle} style={{ marginTop: 18 }}>Money owed <span className={s.small}>(right now)</span></div>
+          <div className={s.tiles}>
+            <Tile label="Monthly statements outstanding" value={`$${money(data.receivables.statementsOutstandingCad)} CAD`} sub={`${data.receivables.openStatements} open, $${money(data.receivables.statementsOverdueCad)} overdue`} />
+            <Tile label="Carrier corrections due" value={curPair(data.receivables.correctionsDue)} sub={`overdue ${curPair(data.receivables.correctionsOverdue)}`} />
+            <Tile label="Awaiting QuickBooks link payment" value={data.receivables.awaitingLinkPayment.count} sub={curPair(data.receivables.awaitingLinkPayment)} />
+            <Tile label="Store credit owed to customers" value={curPair(data.receivables.storeCreditOwed)} sub="used automatically at their next booking" />
+            <Tile label="Accounts on hold" value={data.receivables.accountsOnHold} sub="overdue statement or correction" />
+          </div>
+        </>
       )}
     </div>
   );
 }
+
+const PAYMENT_METHOD = { card: 'Card', qb_link: 'QuickBooks link', account: 'Monthly account', credit: 'Store credit', unknown: 'Other' };
+// "$12.00 CAD, $5.00 USD" — CAD and USD are never added together.
+const curPair = (o) => {
+  const parts = ['CAD', 'USD'].filter(c => (o?.[c] || 0) > 0).map(c => `$${money(o[c])} ${c}`);
+  return parts.length ? parts.join(', ') : '$0.00';
+};
 
 function Tile({ label, value, sub }) {
   return (
@@ -174,7 +221,7 @@ function Quotes() {
           {CARRIERS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <label className={s.inline}>
-          <input type="checkbox" checked={filters.adjustedOnly} onChange={e => setFilter('adjustedOnly', e.target.checked)} /> Adjusted only
+          <input type="checkbox" checked={filters.adjustedOnly} onChange={e => setFilter('adjustedOnly', e.target.checked)} /> Price overrides only
         </label>
       </div>
 
@@ -204,7 +251,7 @@ function Quotes() {
                   <>
                     <td rowSpan={q.rates.length} className={s.quoteCell}>
                       <div className={s.mono}>{q.quoteNumber}</div>
-                      <div className={s.small}>{new Date(q.createdAt).toLocaleDateString('en-CA')} · {q.shipmentType.toUpperCase()}</div>
+                      <div className={s.small}>{new Date(q.createdAt).toLocaleDateString('en-CA')}, {q.shipmentType.toUpperCase()}</div>
                       <div className={s.small}>{q.lane}</div>
                     </td>
                     <td rowSpan={q.rates.length}>
@@ -221,7 +268,7 @@ function Quotes() {
                   {money(r.cost)} <span className={s.small}>{r.currency}</span>
                   {r.accessorialCharges?.length > 0 && (
                     <div className={s.small} title="Accessorial charges from the carrier — included in the cost and passed through without markup">
-                      incl. {r.accessorialCharges.map(c => `${c.label} ${money(c.amount)}`).join(' · ')}
+                      incl. {r.accessorialCharges.map(c => `${c.label} ${money(c.amount)}`).join(', ')}
                     </div>
                   )}
                   {r.notIncluded && <div className={`${s.small} ${s.negative}`} title={r.notIncluded.message}>not included: {r.notIncluded.labels.join(', ')}</div>}
@@ -245,15 +292,42 @@ function Quotes() {
                 </td>
                 <td className={s.num}>{pct(r.engineMarkupPct)}</td>
                 <td className={s.num}>{pct(r.achievedMarkupPct)}</td>
-                <td className={`${s.num} ${r.grossMargin < 0 ? s.negative : ''}`}>{money(r.grossMargin)}</td>
+                <td className={`${s.num} ${r.grossMargin < 0 ? s.negative : ''}`}>
+                  {money(r.grossMargin)}
+                  {r.booking?.correction && (
+                    <>
+                      <div className={s.small} title={`Carrier correction ${r.booking.correction.number}: cost ${money(r.cost)} → ${money(r.booking.correction.newCost)}, price ${money(r.finalPrice)} → ${money(r.booking.correction.newPrice)}`}>
+                        {r.booking.correction.number}: cost → {money(r.booking.correction.newCost)}
+                      </div>
+                      <div className={`${s.small} ${r.booking.marginAfterCorrections < 0 ? s.negative : ''}`}>
+                        after correction {money(r.booking.marginAfterCorrections)}
+                        {r.booking.pendingCollection > 0 && ` (+${money(r.booking.pendingCollection)} pending)`}
+                      </div>
+                    </>
+                  )}
+                </td>
                 <td>
                   {r.booked
-                    ? <span className={`${s.badge} ${s.badgeGreen}`}>Booked {r.booked}</span>
+                    ? <span className={`${s.badge} ${r.booking?.status === 'cancelled' ? s.badgeGrey : r.booking?.status === 'awaiting_payment' ? s.badgeBlue : s.badgeGreen}`}>
+                        {r.booking?.status === 'cancelled' ? 'Cancelled' : r.booking?.status === 'awaiting_payment' ? 'Awaiting payment' : 'Booked'} {r.booked}
+                      </span>
                     : <span className={`${s.badge} ${q.status === 'expired' ? s.badgeGrey : s.badgeBlue}`}>{q.status}</span>}
+                  {r.booking && (
+                    <div className={s.small}>
+                      {PAYMENT_METHOD[r.booking.paymentMethod] || r.booking.paymentMethod}, {String(r.booking.paymentStatus || '').replace('_', ' ')}
+                    </div>
+                  )}
+                  {r.booking?.correction && (
+                    <div className={s.small}>
+                      correction {r.booking.correction.status}
+                      {r.booking.correction.amountDue > 0 && `, due ${money(r.booking.correction.amountDue)}`}
+                      {r.booking.correction.creditAmount > 0 && `, credit ${money(r.booking.correction.creditAmount)}`}
+                    </div>
+                  )}
                 </td>
                 <td>
                   {(r.booking ? r.booking.status !== 'cancelled' : q.status === 'active') && (
-                    <button className={s.linkBtn} onClick={() => setAdjusting({ quote: q, rate: r })}>Adjust</button>
+                    <button className={s.linkBtn} onClick={() => setAdjusting({ quote: q, rate: r })}>Override price</button>
                   )}
                 </td>
               </tr>
@@ -266,9 +340,9 @@ function Quotes() {
       </div>
 
       <div className={s.pager}>
-        <button className={s.btnGhost} disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
-        <span className={s.small}>Page {page} of {totalPages}{data ? ` · ${data.pagination.total} quotes` : ''}</span>
-        <button className={s.btnGhost} disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
+        <button className={s.btnGhost} disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</button>
+        <span className={s.small}>Page {page} of {totalPages}{data ? `, ${data.pagination.total} quotes` : ''}</span>
+        <button className={s.btnGhost} disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
       </div>
 
       {adjusting && (
@@ -314,12 +388,12 @@ function AdjustModal({ quote, rate, onClose, onSaved }) {
   return (
     <div className={s.overlay} onClick={onClose}>
       <div className={s.modal} onClick={e => e.stopPropagation()}>
-        <div className={s.cardTitle}>Adjust price</div>
-        <div className={s.sub}>{quote.quoteNumber} · {rate.carrierName} — {rate.serviceName} · {rate.currency}</div>
+        <div className={s.cardTitle}>Override price</div>
+        <div className={s.sub}>{quote.quoteNumber}, {rate.carrierName} — {rate.serviceName}, {rate.currency}</div>
 
         {rate.booking && (
           <div className={s.info}>
-            Booked as {rate.booking.number}. Changing the price updates the booking and adds an adjustment line to its invoice.
+            Booked as {rate.booking.number}. Changing the price updates the booking and adds a price-override line to its invoice. (Carrier re-weigh corrections are handled under Adjustments.)
             {rate.booking.paymentStatus === 'paid'
               ? ' The customer already paid, so the difference is recorded as a credit owed (price down) or balance due (price up) for IFF to settle — no automatic refund or charge is made.'
               : ' The invoice is still open, so the new amount is simply what they will be billed.'}
@@ -642,7 +716,7 @@ function Calculator({ draft }) {
       <div className={s.cardTitle}>Test the draft rules</div>
       <div className={s.sub}>Prices a sample shipment against the rules on the left — nothing is saved.</div>
       <div className={s.calcGrid}>
-        <label className={s.field}>Carrier cost<input className={s.input} type="number" value={form.cost} onChange={e => set('cost', e.target.value)} /></label>
+        <label className={s.field}>Carrier cost<input className={s.input} type="number" min="0" step="any" value={form.cost} onChange={e => set('cost', e.target.value)} /></label>
         <label className={s.field}>Currency
           <select className={s.input} value={form.currency} onChange={e => set('currency', e.target.value)}><option>CAD</option><option>USD</option></select>
         </label>
@@ -656,11 +730,11 @@ function Calculator({ draft }) {
             {Object.keys(MODES).map(p => <option key={p}>{p}</option>)}
           </select>
         </label>
-        <label className={s.field}>Qty<input className={s.input} type="number" value={form.qty} onChange={e => set('qty', e.target.value)} /></label>
-        <label className={s.field}>Wt / pc (lb)<input className={s.input} type="number" value={form.wt} onChange={e => set('wt', e.target.value)} /></label>
-        <label className={s.field}>L (in)<input className={s.input} type="number" value={form.l} onChange={e => set('l', e.target.value)} /></label>
-        <label className={s.field}>W (in)<input className={s.input} type="number" value={form.w} onChange={e => set('w', e.target.value)} /></label>
-        <label className={s.field}>H (in)<input className={s.input} type="number" value={form.h} onChange={e => set('h', e.target.value)} /></label>
+        <label className={s.field}>Qty<input className={s.input} type="number" min="0" step="any" value={form.qty} onChange={e => set('qty', e.target.value)} /></label>
+        <label className={s.field}>Wt / pc (lb)<input className={s.input} type="number" min="0" step="any" value={form.wt} onChange={e => set('wt', e.target.value)} /></label>
+        <label className={s.field}>L (in)<input className={s.input} type="number" min="0" step="any" value={form.l} onChange={e => set('l', e.target.value)} /></label>
+        <label className={s.field}>W (in)<input className={s.input} type="number" min="0" step="any" value={form.w} onChange={e => set('w', e.target.value)} /></label>
+        <label className={s.field}>H (in)<input className={s.input} type="number" min="0" step="any" value={form.h} onChange={e => set('h', e.target.value)} /></label>
       </div>
       <button className={s.btnPrimary} onClick={run}>Get price</button>
       {error && <div className={s.error}>{error}</div>}
@@ -668,7 +742,7 @@ function Calculator({ draft }) {
         <div className={s.result}>
           <div className={s.tileLabel}>Recommended sell</div>
           <div className={s.bigPrice}>${money(result.sell)} <span className={s.small}>{result.currency}</span></div>
-          <div className={s.small}>{pct(result.markupPct)} markup · {money(result.grossMargin)} gross</div>
+          <div className={s.small}>{pct(result.markupPct)} markup, {money(result.grossMargin)} gross</div>
           <div className={s.breakdown}>
             <div><span>Carrier cost (CAD)</span><b>{money(result.costCad)}</b></div>
             <div><span>Sell (CAD)</span><b>{money(result.sellCad)}</b></div>
@@ -784,7 +858,7 @@ function Calibration({ onLoadProposals }) {
             </table>
           </div>
           <div className={s.pager}>
-            <span className={s.small}>Rules version {report.rulesVersion} · last {report.months} months · min {report.minN} quotes per band</span>
+            <span className={s.small}>Rules version {report.rulesVersion}, last {report.months} months, min {report.minN} quotes per band</span>
             <button className={s.btnPrimary} disabled={!hasProposals} onClick={loadIntoRules}>Load proposals into rules editor</button>
           </div>
         </>

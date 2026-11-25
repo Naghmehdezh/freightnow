@@ -71,6 +71,16 @@ function getNextFriday() {
   return d.toISOString().split('T')[0];
 }
 
+// UTC offset of the shipper's location on the ship date (DHL wants local time + offset).
+const ORIGIN_ZONES = { CA: 'America/Toronto', US: 'America/New_York', DE: 'Europe/Berlin', NO: 'Europe/Oslo' };
+function originOffset(country, date) {
+  const zone = ORIGIN_ZONES[country] || 'UTC';
+  const name = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' })
+    .formatToParts(new Date(`${date}T12:00:00Z`)).find(p => p.type === 'timeZoneName')?.value || 'GMT';
+  const m = name.match(/GMT([+-]\d{2}):?(\d{2})?/);
+  return m ? `${m[1]}:${m[2] || '00'}` : '+00:00';
+}
+
 function getNextBusinessDay() {
   const d = new Date();
   do {
@@ -116,6 +126,7 @@ const TEST_CASES = [
       lineItems: [{
         number: 1,
         description: 'AUDIO CD\'S',
+        hsCode: '852349',
         quantity: { value: 2, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'CA',
         weight: { netValue: 2, grossValue: 2 },
@@ -158,11 +169,12 @@ const TEST_CASES = [
       contactInformation: { phone: '+2341234567890', companyName: 'Test Receiver NG', fullName: 'Nigeria Test', email: 'test@example.ng' },
     },
     packages: [{ weight: 1, dimensions: { length: 15, width: 10, height: 5 }, unitOfMeasurement: 'imperial' }],
-    contentDescription: 'ANY',
+    contentDescription: "MEN'S COTTON T-SHIRTS",
     exportDeclaration: {
       lineItems: [{
         number: 1,
-        description: 'ANY',
+        description: "MEN'S COTTON T-SHIRTS",
+        hsCode: '610910',
         quantity: { value: 1, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'CA',
         weight: { netValue: 1, grossValue: 1 },
@@ -207,11 +219,12 @@ const TEST_CASES = [
       { weight: 20, dimensions: { length: 18, width: 18, height: 18 }, unitOfMeasurement: 'imperial' },
       { weight: 20, dimensions: { length: 18, width: 18, height: 18 }, unitOfMeasurement: 'imperial' },
     ],
-    contentDescription: 'AUTO PARTS',
+    contentDescription: 'AUTO PARTS - BRAKE PADS',
     exportDeclaration: {
       lineItems: [{
         number: 1,
-        description: 'AUTO PARTS',
+        description: 'AUTO PARTS - BRAKE PADS',
+        hsCode: '870830',
         quantity: { value: 3, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'CN',
         weight: { netValue: 27, grossValue: 27 },
@@ -242,11 +255,12 @@ const TEST_CASES = [
       contactInformation: { phone: '+18011234567', companyName: 'Test Receiver US', fullName: 'US Test', email: 'test@example.com' },
     },
     packages: [{ weight: 185, dimensions: { length: 42, width: 42, height: 12 }, unitOfMeasurement: 'imperial' }],
-    contentDescription: 'SAMPLES',
+    contentDescription: 'SAMPLES - PLASTIC HOUSEHOLD ARTICLES',
     exportDeclaration: {
       lineItems: [{
         number: 1,
-        description: 'SAMPLES',
+        description: 'SAMPLES - PLASTIC HOUSEHOLD ARTICLES',
+        hsCode: '392690',
         quantity: { value: 3, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'TW',
         weight: { netValue: 84, grossValue: 84 },
@@ -294,11 +308,12 @@ const TEST_CASES = [
       contactInformation: { phone: '+61212345678', companyName: 'Test Receiver AU', fullName: 'Australia Test', email: 'test@example.au' },
     },
     packages: [{ weight: 3, dimensions: { length: 30, width: 5, height: 8 }, unitOfMeasurement: 'imperial' }],
-    contentDescription: 'ANY',
+    contentDescription: "PRINTED BOOKS",
     exportDeclaration: {
       lineItems: [{
         number: 1,
-        description: 'ANY',
+        description: "PRINTED BOOKS",
+        hsCode: '490199',
         quantity: { value: 2, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'CA',
         weight: { netValue: 1.4, grossValue: 1.4 },
@@ -326,11 +341,12 @@ const TEST_CASES = [
       contactInformation: { phone: '+523312345678', companyName: 'Test Receiver MX', fullName: 'Mexico Test', email: 'test@example.mx' },
     },
     packages: [{ weight: 0.5, dimensions: { length: 5, width: 5, height: 5 }, unitOfMeasurement: 'imperial' }],
-    contentDescription: 'CLOTHING',
+    contentDescription: 'CLOTHING - COTTON T-SHIRTS',
     exportDeclaration: {
       lineItems: [{
         number: 1,
-        description: 'CLOTHING',
+        description: 'CLOTHING - COTTON T-SHIRTS',
+        hsCode: '610910',
         quantity: { value: 1, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'CN',
         weight: { netValue: 0.2, grossValue: 0.2 },
@@ -365,6 +381,7 @@ const TEST_CASES = [
       lineItems: [{
         number: 1,
         description: 'DRESSES',
+        hsCode: '620442',
         quantity: { value: 4, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'DE',
         weight: { netValue: 3.2, grossValue: 3.2 },
@@ -391,11 +408,12 @@ const TEST_CASES = [
       contactInformation: { phone: '+551112345678', companyName: 'Test Receiver BR', fullName: 'Brazil Test', email: 'test@example.br' },
     },
     packages: [{ weight: 1, dimensions: { length: 15, width: 10, height: 5 }, unitOfMeasurement: 'imperial' }],
-    contentDescription: 'ANY',
+    contentDescription: "LEATHER WALLETS",
     exportDeclaration: {
       lineItems: [{
         number: 1,
-        description: 'ANY',
+        description: "LEATHER WALLETS",
+        hsCode: '420232',
         quantity: { value: 1, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'CA',
         weight: { netValue: 0.9, grossValue: 0.9 },
@@ -406,7 +424,7 @@ const TEST_CASES = [
       declaredValue: 50,
       declaredValueCurrency: 'CAD',
     },
-    valueAddedServices: [{ serviceCode: 'WY' }],
+    // No Paperless Trade: DHL rejects WY Canada → Brazil (code 7008); paper commercial invoice instead.
     incoterm: 'DDP',
     dutiesTaxesAccount: OUTBOUND_ACCOUNT,
   },
@@ -448,6 +466,7 @@ const TEST_CASES = [
       lineItems: [{
         number: 1,
         description: 'ELECTRONIC COMPONENTS',
+        hsCode: '854239',
         quantity: { value: 3, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'US',
         weight: { netValue: 1, grossValue: 1 },
@@ -482,6 +501,7 @@ const TEST_CASES = [
       lineItems: [{
         number: 1,
         description: 'PERSONAL COMPUTER',
+        hsCode: '847130',
         quantity: { value: 1, unitOfMeasurement: 'PCS' },
         manufacturerCountry: 'NO',
         weight: { netValue: 2, grossValue: 2 },
@@ -605,6 +625,8 @@ function buildShipRequest(tc) {
         manufacturerCountry: li.manufacturerCountry,
         weight: li.weight,
         price: tc.exportDeclaration.declaredValue / (tc.exportDeclaration.lineItems.length),
+        // HS code (DHL requires it on every dutiable line item for customs clearance)
+        ...(li.hsCode && { commodityCodes: [{ typeCode: 'outbound', value: li.hsCode }] }),
       })),
       invoice: tc.exportDeclaration.invoice,
       exportReason: tc.exportDeclaration.exportReason,
@@ -623,7 +645,7 @@ function buildShipRequest(tc) {
   });
 
   const body = {
-    plannedShippingDateAndTime: `${shipDate}T10:00:00 GMT+00:00`,
+    plannedShippingDateAndTime: `${shipDate}T10:00:00 GMT${originOffset(tc.shipper.postalAddress.countryCode, shipDate)}`,
     pickup: { isRequested: false },
     productCode: tc.productCode,
     accounts,

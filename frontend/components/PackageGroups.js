@@ -46,14 +46,14 @@ export default function PackageGroups({ groups, onChange, totalWeightKg }) {
               <div className="field"><label>H ({g.unit})</label><input type="number" min="0" step="any" value={g.height} onChange={e => update(i, 'height', e.target.value)} /></div>
             </div>
             <div className={s.groupFoot}>
-              Pcs: <b>{parseInt(g.pieces) || '—'}</b> · Volume weight: <b>{vol != null ? `${fmt(vol)} kg` : '—'}</b>
+              Pcs: <b>{parseInt(g.pieces) || '—'}</b>, volume weight <b>{vol != null ? `${fmt(vol)} kg` : '—'}</b>
             </div>
           </div>
         );
       })}
       <button type="button" className={s.add} onClick={() => onChange([...groups, emptyGroup()])}>+ Add package group</button>
       <div className={s.totals}>
-        Total pieces: <b>{totals.pieces}</b> · Actual weight: <b>{fmt(totals.actual)} kg</b> · Volume weight: <b>{fmt(totals.volume)} kg</b> · Chargeable weight: <b>{fmt(totals.chargeable)} kg</b>
+        Total pieces: <b>{totals.pieces}</b>, actual weight <b>{fmt(totals.actual)} kg</b>, volume weight <b>{fmt(totals.volume)} kg</b>, chargeable weight: <b>{fmt(totals.chargeable)} kg</b>
       </div>
     </div>
   );

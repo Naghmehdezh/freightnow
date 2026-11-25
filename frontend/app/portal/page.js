@@ -108,11 +108,11 @@ export default function DashboardPage() {
   }
 
   function getStatusLabel(ship) {
-    if (ship.status === 'delivered') return '● Delivered';
-    if (ship.status === 'in_transit') return '↦ In transit';
-    if (ship.pickupStatus === 'scheduled') return '○ Awaiting pickup';
+    if (ship.status === 'delivered') return 'Delivered';
+    if (ship.status === 'in_transit') return 'In transit';
+    if (ship.pickupStatus === 'scheduled') return 'Awaiting pickup';
     if (ship.pickupStatus === 'to_arrange') return '! Pickup to be arranged';
-    return '○ Booked';
+    return 'Booked';
   }
 
   function getBookingStatusClass(status) {
@@ -122,9 +122,9 @@ export default function DashboardPage() {
   }
 
   function getBookingStatusLabel(status) {
-    if (status === 'confirmed') return '● Confirmed';
-    if (status === 'cancelled') return '✕ Cancelled';
-    return '○ ' + (status || 'Pending');
+    if (status === 'confirmed') return 'Confirmed';
+    if (status === 'cancelled') return 'Cancelled';
+    return (status ? `${status[0].toUpperCase()}${status.slice(1).replace('_', ' ')}` : 'Pending');
   }
 
   // Fallback demo data
@@ -157,59 +157,42 @@ export default function DashboardPage() {
   return (
     <>
       {/* Stats */}
-      <div className={s.statsRow}>
+      <section className={s.statsRow} aria-label="This month">
         <div className={s.statCard}>
           <div className={s.statLabel}>Shipments this month</div>
           <div className={s.statValue}>{stats.shipmentsThisMonth}</div>
-          <div className={`${s.statSub} ${s.statSubUp}`}>&uarr; 3 from last month</div>
+          <div className={s.statSub}>Booked since the 1st</div>
         </div>
         <div className={s.statCard}>
-          <div className={s.statLabel}>Total spent (CAD)</div>
-          <div className={s.statValue}>${stats.totalSpent?.toLocaleString()}</div>
-          <div className={s.statSub}>This month</div>
+          <div className={s.statLabel}>Spent this month</div>
+          <div className={s.statValue}>C${stats.totalSpent?.toLocaleString()}</div>
+          <div className={s.statSub}>All bookings, in CAD</div>
         </div>
         <div className={s.statCard}>
           <div className={s.statLabel}>In transit</div>
           <div className={s.statValue}>{stats.inTransit}</div>
-          <div className={s.statSub}>Active shipments</div>
+          <div className={s.statSub}>Picked up, not yet delivered</div>
         </div>
         <div className={s.statCard}>
-          <div className={s.statLabel}>Saved vs list rate</div>
-          <div className={s.statValue}>${stats.saved}</div>
-          <div className={`${s.statSub} ${s.statSubUp}`}>&uarr; With IFF rates</div>
+          <div className={s.statLabel}>Saved vs list rates</div>
+          <div className={s.statValue}>C${stats.saved}</div>
+          <div className={s.statSub}>Compared with carrier list prices</div>
         </div>
-      </div>
-
-      {/* Quick action */}
-      <div className={s.quickAction}>
-        <div className={s.quickActionInner}>
-          <div>
-            <div className={s.quickActionTitle}>Ready to ship?</div>
-            <div className={s.quickActionSub}>Get instant quotes from all carriers — envelope, parcel, LTL, air, ocean and more.</div>
-          </div>
-          <Link href="/portal/quote" className={s.quickActionBtn}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            Get a quote
-          </Link>
-        </div>
-      </div>
+      </section>
 
       {/* Recent Quotes */}
       <div className="section-card">
         <div className={s.scHeader}>
           <div>
             <div className={s.scTitle}>Recent quotes</div>
-            <div className={s.scSub}>Quotes are bookable until end of day they were generated</div>
+            <div className={s.scSub}>A quote can be booked until the end of the day it was made.</div>
           </div>
-          <Link href="/portal/quote" className={s.scLink}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            New quote
-          </Link>
+          <Link href="/portal/quote" className={s.scLink}>New quote</Link>
         </div>
         <div className={s.tableWrap}>
           <table>
             <thead>
-              <tr><th>Quote #</th><th>Route</th><th>Type</th><th>Best carrier</th><th>Service</th><th>Rate</th><th>Est. delivery</th><th>Quoted at</th><th></th></tr>
+              <tr><th>Quote</th><th>Route</th><th>Type</th><th>Best carrier</th><th>Service</th><th className={s.right}>Rate</th><th>Est. delivery</th><th>Quoted at</th><th></th></tr>
             </thead>
             <tbody>
               {displayQuotes.map((q, i) => {
@@ -226,24 +209,24 @@ export default function DashboardPage() {
 
                 return (
                   <tr key={i}>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>{q.quoteNumber}</td>
+                    <td className="ref">{q.quoteNumber}</td>
                     <td>{route}</td>
                     <td>{q.shipmentType}</td>
                     <td>{carrier}</td>
                     <td>{service}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{rate}</td>
+                    <td className={s.money}>{rate}</td>
                     <td>{delivery}</td>
-                    <td style={{ fontSize: '12px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{quotedAt}</td>
+                    <td className={s.muted}>{quotedAt}</td>
                     <td>
                       {isBooked || bookState === 'booked' ? (
-                        <button className={s.btnBookQuote} disabled>Booked ✓</button>
+                        <button className={s.btnBookQuote} disabled>Booked</button>
                       ) : bestRate && isLive ? (
                         <button
                           className={s.btnBookQuote}
                           disabled={bookState === 'loading'}
                           onClick={() => handleBook(q)}
                         >
-                          {bookState === 'loading' ? '…' : 'Book →'}
+                          {bookState === 'loading' ? '…' : 'Book'}
                         </button>
                       ) : (
                         <button className={s.btnBookQuote} disabled>Expired</button>
@@ -262,28 +245,30 @@ export default function DashboardPage() {
         <div className={s.scHeader}>
           <div>
             <div className={s.scTitle}>Recent bookings</div>
-            <div className={s.scSub}>Confirmed orders awaiting carrier pickup</div>
+            <div className={s.scSub}>Confirmed orders waiting for carrier pickup.</div>
           </div>
         </div>
         <div className={s.tableWrap}>
           <table>
             <thead>
-              <tr><th>Booking #</th><th>Route</th><th>Carrier</th><th>Service</th><th>Rate</th><th>Booked at</th><th>Status</th></tr>
+              <tr><th>Booking</th><th>Route</th><th>Carrier</th><th>Service</th><th className={s.right}>Rate</th><th>Booked at</th><th>Status</th></tr>
             </thead>
             <tbody>
               {displayBookings.map((b, i) => {
                 const route = b.route || `${b.quote?.originCity || ''} → ${b.quote?.destCity || ''}`;
-                const rate = b.rate || (b.sellRate ? `C$${b.sellRate.toFixed(2)}` : '—');
+                const amount = b.chargeAmount ?? b.sellRate;
+                const cur = b.chargeCurrency || b.currency;
+                const rate = b.rate || (amount != null ? `${cur === 'USD' ? 'US$' : 'C$'}${Number(amount).toFixed(2)}` : '—');
                 const bookedAt = b.bookedAt ? formatQuoteTime(b.bookedAt) : '—';
 
                 return (
                   <tr key={i}>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>{b.bookingNumber}</td>
+                    <td className="ref">{b.bookingNumber}</td>
                     <td>{route}</td>
                     <td>{b.carrierName || b.carrier}</td>
                     <td>{b.serviceName || b.service}</td>
-                    <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{rate}</td>
-                    <td style={{ fontSize: '12px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{bookedAt}</td>
+                    <td className={s.money}>{rate}</td>
+                    <td className={s.muted}>{bookedAt}</td>
                     <td><span className={`${s.statusBadge} ${getBookingStatusClass(b.status)}`}>{getBookingStatusLabel(b.status)}</span></td>
                   </tr>
                 );
@@ -298,30 +283,29 @@ export default function DashboardPage() {
         <div className={s.scHeader}>
           <div>
             <div className={s.scTitle}>Recent shipments</div>
-            <div className={s.scSub}>Tracking and delivery status</div>
+            <div className={s.scSub}>Latest tracking and delivery status.</div>
           </div>
         </div>
         <div className={s.tableWrap}>
           <table>
             <thead>
-              <tr><th>Tracking #</th><th>Route</th><th>Carrier</th><th>Service</th><th>Date</th><th>Status</th><th></th></tr>
+              <tr><th>Tracking</th><th>Route</th><th>Carrier</th><th>Service</th><th>Date</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
               {displayShipments.map((ship, i) => {
                 const shipId = ship._id || ship.id;
                 return (
                   <tr key={i}>
-                    <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>{ship.trackingNumber}</td>
+                    <td className="ref">{ship.trackingNumber}</td>
                     <td>{ship.route || `${ship.originCity || ''} → ${ship.destCity || ''}`}</td>
                     <td>{ship.carrier || ship.carrierName}</td>
                     <td>{ship.service || ship.serviceName}</td>
-                    <td style={{ fontSize: '12px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{ship.date || ship.bookedAt?.split('T')[0]}</td>
+                    <td className={s.muted}>{ship.date || ship.bookedAt?.split('T')[0]}</td>
                     <td><span className={`${s.statusBadge} ${getStatusClass(ship.status)}`}>{getStatusLabel(ship)}</span></td>
                     <td>
                       {shipId && ship.labelDocType && (
                         <button
-                          className={s.btnBookQuote}
-                          style={{ background: 'var(--green)' }}
+                          className={s.btnSecondary}
                           onClick={() => handleDownloadLabel(shipId)}
                           disabled={labelLoading[shipId]}
                         >

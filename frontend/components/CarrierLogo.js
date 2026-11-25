@@ -14,7 +14,7 @@ export default function CarrierLogo({ id, label, chip, className, style, fallbac
   if (!chip) {
     if (failed) {
       return (
-        <span className={className} style={{ fontFamily: 'var(--display)', fontWeight: 700, ...fallbackStyle }}>
+        <span className={className} style={{ fontWeight: 600, ...fallbackStyle }}>
           {label}
         </span>
       );
@@ -43,7 +43,7 @@ export default function CarrierLogo({ id, label, chip, className, style, fallbac
       }}
     >
       {failed ? (
-        <span style={{ fontFamily: 'var(--display)', fontWeight: 700, color: chip.color, ...fallbackStyle }}>{label}</span>
+        <span style={{ fontWeight: 600, color: chip.color, ...fallbackStyle }}>{label}</span>
       ) : (
         <img
           src={`/carrier-logos/${id}.svg`}

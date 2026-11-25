@@ -9,6 +9,7 @@ const paymentSchema = new Schema({
   amount: { type: Number, required: true },
   currency: { type: String, default: 'CAD' },
   qbTransactionId: String,
+  method: { type: String, enum: ['card', 'credit', 'offline', 'qb_link'] }, // how it was paid (card = QuickBooks Payments)
   status: { type: String, enum: ['pending', 'succeeded', 'failed', 'refunded'], default: 'pending' },
   failureReason: String,
 }, { timestamps: { createdAt: 'attemptedAt', updatedAt: false } });

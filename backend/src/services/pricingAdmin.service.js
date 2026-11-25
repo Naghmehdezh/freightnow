@@ -4,6 +4,10 @@ const QuoteRate = require('../models/QuoteRate');
 const Booking = require('../models/Booking');
 const Invoice = require('../models/Invoice');
 const User = require('../models/User');
+const Adjustment = require('../models/Adjustment');
+const Statement = require('../models/Statement');
+const Company = require('../models/Company');
+const { convert } = require('../utils/currency');
 require('../models/Company'); // registered for populate('user.company')
 const { priceQuote } = require('./pricingEngine.service');
 const { getActiveRuleSet } = require('./pricingRules.service');
@@ -19,6 +23,33 @@ const round2 = n => (n == null ? null : Math.round(n * 100) / 100);
 function achievedMarkup(rate) {
   if (!rate.baseRate) return null;
   return round1((rate.displayRate / rate.baseRate - 1) * 100);
+}
+
+// What a booking really made once carrier corrections are settled: the corrected carrier cost,
+// plus anything collected from the customer, less anything credited or refunded back.
+// A correction still awaiting payment isn't counted as collected (shown as pending instead).
+function settledBooking(booking, correction) {
+  const cost = correction ? correction.newCost : booking.costRate;
+  // Corrections are charged in the customer's currency; margins are in the carrier's currency.
+  const toCarrier = n => convert(n || 0, correction?.currency || booking.currency, booking.currency || 'CAD', booking.fxRate);
+  const collected = correction?.status === 'paid' ? toCarrier(correction.amountDue) : 0;
+  const returned = ['credited', 'refunded'].includes(correction?.status) ? toCarrier(correction.creditAmount) : 0;
+  const revenue = round2((booking.sellRate || 0) + collected - returned);
+  return {
+    cost: round2(cost || 0),
+    revenue,
+    margin: round2(revenue - (cost || 0)),
+    pending: ['sent', 'disputed'].includes(correction?.status) ? toCarrier(correction.amountDue) : 0,
+  };
+}
+
+// How a booking was paid; bookings made before the method was recorded are inferred.
+const paymentMethodOf = b => b.paymentMethod || (b.paymentStatus === 'invoiced' ? 'account' : b.paymentStatus === 'paid' ? 'card' : 'unknown');
+
+// The latest live carrier correction per booking (cancelled drafts ignored).
+async function correctionsFor(bookingIds) {
+  const rows = await Adjustment.find({ booking: { $in: bookingIds }, status: { $ne: 'cancelled' } }).sort({ createdAt: 1 }).lean();
+  return new Map(rows.map(a => [String(a.booking), a]));
 }
 
 function monthsAgo(months) {
@@ -55,8 +86,9 @@ async function listQuotesForAdmin({ from, to, carrierId, adjustedOnly, search, p
 
   const [rates, bookings] = await Promise.all([
     QuoteRate.find(rateFilter).sort({ displayRate: 1 }).populate('adjustedBy', 'email firstName lastName'),
-    Booking.find({ quote: { $in: quoteIds } }).select('quote quoteRate bookingNumber status sellRate originalSellRate balanceAdjustment paymentStatus'),
+    Booking.find({ quote: { $in: quoteIds } }).select('quote quoteRate bookingNumber status sellRate costRate currency chargeCurrency chargeAmount fxRate originalSellRate balanceAdjustment paymentStatus paymentMethod payBy'),
   ]);
+  const corrections = await correctionsFor(bookings.map(b => b._id));
 
   const bookingByRate = new Map(bookings.map(b => [String(b.quoteRate), b]));
   const ratesByQuote = new Map();
@@ -84,13 +116,28 @@ async function listQuotesForAdmin({ from, to, carrierId, adjustedOnly, search, p
       booked: bookingByRate.get(String(r._id))?.bookingNumber || null,
       booking: (() => {
         const b = bookingByRate.get(String(r._id));
-        return b ? {
+        if (!b) return null;
+        const c = corrections.get(String(b._id));
+        const settled = settledBooking(b, c);
+        return {
           number: b.bookingNumber,
           status: b.status,
           paymentStatus: b.paymentStatus,
+          paymentMethod: paymentMethodOf(b),
+          // What the customer paid, in the currency they chose (may differ from the carrier's).
+          charged: b.chargeAmount != null ? { amount: b.chargeAmount, currency: b.chargeCurrency } : null,
+          payBy: b.payBy || null,
           originalSellRate: b.originalSellRate ?? null,
           balanceAdjustment: b.balanceAdjustment || 0,
-        } : null;
+          // Carrier correction (re-weigh / re-measure) and the margin once it's settled.
+          correction: c ? {
+            number: c.adjustmentNumber, status: c.status, outcome: c.outcome, reason: c.reason,
+            newCost: c.newCost, newPrice: c.newPrice, difference: c.difference,
+            amountDue: c.amountDue, creditAmount: c.creditAmount,
+          } : null,
+          marginAfterCorrections: c ? settled.margin : null,
+          pendingCollection: settled.pending || 0,
+        };
       })(),
       adjustment: r.adjustedAt ? {
         reason: r.adjustmentReason,
@@ -315,16 +362,37 @@ async function summary({ months = 12 } = {}) {
   const quoteIds = quotes.map(q => q._id);
   const [rates, bookings] = await Promise.all([
     QuoteRate.find({ quote: { $in: quoteIds } }).select('baseRate displayRate adjustedAt'),
-    Booking.find({ quote: { $in: quoteIds } }).select('costRate sellRate currency'),
+    Booking.find({ quote: { $in: quoteIds }, status: { $ne: 'cancelled' } }).select('costRate sellRate currency fxRate paymentMethod paymentStatus status'),
   ]);
+  const corrections = await correctionsFor(bookings.map(b => b._id));
   const markups = rates.map(achievedMarkup).filter(v => v != null);
   // Bookings can be in CAD or USD — totals are kept per currency, never added together.
   const byCurrency = {};
+  const correctionTotals = {};
+  const paymentMethods = {};
   for (const b of bookings) {
-    const t = byCurrency[b.currency || 'CAD'] ||= { cost: 0, sell: 0, count: 0 };
+    const cur = b.currency || 'CAD';
+    const t = byCurrency[cur] ||= { cost: 0, sell: 0, count: 0, costAfter: 0, revenueAfter: 0 };
+    const c = corrections.get(String(b._id));
+    const settled = settledBooking(b, c);
     t.cost += b.costRate || 0;
     t.sell += b.sellRate || 0;
+    t.costAfter += settled.cost;
+    t.revenueAfter += settled.revenue;
     t.count += 1;
+    const method = paymentMethodOf(b);
+    paymentMethods[method] = (paymentMethods[method] || 0) + 1;
+    if (c) {
+      // Grouped by the currency the customer was charged in.
+      const ccur = c.currency || cur;
+      const ct = correctionTotals[ccur] ||= { count: 0, extraCost: 0, collected: 0, pending: 0, absorbed: 0, credited: 0 };
+      ct.count += 1;
+      ct.extraCost += convert((c.newCost || 0) - (c.originalCost || 0), cur, ccur, b.fxRate);
+      if (c.status === 'paid') ct.collected += c.amountDue || 0;
+      if (['sent', 'disputed'].includes(c.status)) ct.pending += c.amountDue || 0;
+      if (['absorbed', 'waived'].includes(c.status) && c.difference > 0) ct.absorbed += c.difference;
+      if (['credited', 'refunded'].includes(c.status)) ct.credited += c.creditAmount || 0;
+    }
   }
   const bookedByCurrency = Object.fromEntries(Object.entries(byCurrency).map(([cur, t]) => [cur, {
     shipments: t.count,
@@ -332,7 +400,10 @@ async function summary({ months = 12 } = {}) {
     sell: round2(t.sell),
     grossMargin: round2(t.sell - t.cost),
     marginPct: t.cost ? round1((t.sell / t.cost - 1) * 100) : null,
+    // After carrier corrections are settled (corrected cost, + collected, - credited back).
+    marginAfterCorrections: round2(t.revenueAfter - t.costAfter),
   }]));
+  const carrierCorrections = Object.fromEntries(Object.entries(correctionTotals).map(([cur, t]) => [cur, Object.fromEntries(Object.entries(t).map(([k, v]) => [k, k === 'count' ? v : round2(v)]))]));
 
   return {
     months,
@@ -343,7 +414,37 @@ async function summary({ months = 12 } = {}) {
     bookedByCurrency,
     avgAchievedMarkupPct: markups.length ? round1(markups.reduce((s, v) => s + v, 0) / markups.length) : null,
     medianAchievedMarkupPct: round1(percentile(markups, 0.5)),
-    adjustedRates: rates.filter(r => r.adjustedAt).length,
+    adjustedRates: rates.filter(r => r.adjustedAt).length, // price overrides
+    carrierCorrections,
+    paymentMethods,
+    receivables: await receivables(),
+  };
+}
+
+// Money owed right now (not limited to the window): monthly statements, carrier-correction
+// balances, bookings awaiting a QuickBooks link payment — and store credit IFF owes customers.
+async function receivables() {
+  const now = new Date();
+  const [statements, adjustments, awaiting, companies] = await Promise.all([
+    Statement.find({ status: { $in: ['open', 'partially_paid'] } }).select('amountDue paidAmount dueDate').lean(),
+    Adjustment.find({ status: { $in: ['sent', 'disputed'] } }).select('amountDue currency dueDate status').lean(),
+    Booking.find({ status: 'awaiting_payment' }).select('sellRate currency chargeAmount chargeCurrency').lean()
+      .then(rows => rows.map(b => ({ amount: b.chargeAmount ?? b.sellRate, currency: b.chargeCurrency || b.currency }))),
+    Company.find({ $or: [{ 'credit.CAD': { $gt: 0 } }, { 'credit.USD': { $gt: 0 } }, { 'accountHold.active': true }] }).select('credit accountHold').lean(),
+  ]);
+  const sum = (rows, f) => round2(rows.reduce((n, r) => n + (f(r) || 0), 0));
+  const byCur = (rows, f) => ({ CAD: sum(rows.filter(r => (r.currency || 'CAD') === 'CAD'), f), USD: sum(rows.filter(r => r.currency === 'USD'), f) });
+  const overdueStatements = statements.filter(st => st.dueDate && new Date(st.dueDate) < now);
+  const overdueAdjustments = adjustments.filter(a => a.status === 'sent' && a.dueDate && new Date(a.dueDate) < now);
+  return {
+    statementsOutstandingCad: sum(statements, st => st.amountDue - (st.paidAmount || 0)),
+    statementsOverdueCad: sum(overdueStatements, st => st.amountDue - (st.paidAmount || 0)),
+    openStatements: statements.length,
+    correctionsDue: byCur(adjustments, a => a.amountDue),
+    correctionsOverdue: byCur(overdueAdjustments, a => a.amountDue),
+    awaitingLinkPayment: { count: awaiting.length, ...byCur(awaiting, b => b.amount) },
+    storeCreditOwed: { CAD: sum(companies, c => c.credit?.CAD), USD: sum(companies, c => c.credit?.USD) },
+    accountsOnHold: companies.filter(c => c.accountHold?.active).length,
   };
 }
 

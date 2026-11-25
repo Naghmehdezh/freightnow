@@ -360,6 +360,7 @@ class DHLAdapter extends CarrierAdapter {
 
     // International: add export declaration + declared value
     if (isIntl) {
+      const commodity = details.customsClearanceDetail?.commodities?.[0];
       const declaredValue = details.customsClearanceDetail?.commodities?.[0]?.customsValue?.amount
         || details.declaredValue?.amount || 100;
       const currency = details.customsClearanceDetail?.commodities?.[0]?.customsValue?.currency
@@ -372,8 +373,10 @@ class DHLAdapter extends CarrierAdapter {
           description: contentDesc,
           price: declaredValue,
           quantity: { value: details.totalPackageCount || 1, unitOfMeasurement: 'PCS' },
-          manufacturerCountry: originCountry,
+          manufacturerCountry: commodity?.countryOfManufacture || originCountry,
           weight: { netValue: details.weight?.value || 1, grossValue: details.weight?.value || 1 },
+          // HS code — DHL requires it on dutiable line items for customs clearance.
+          ...(commodity?.harmonizedCode && { commodityCodes: [{ typeCode: 'outbound', value: commodity.harmonizedCode }] }),
         }],
         invoice: { number: `INV-${Date.now()}`, date: shipDate },
         exportReason: 'permanent',

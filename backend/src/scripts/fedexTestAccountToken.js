@@ -60,18 +60,27 @@ async function getTestAccountToken(accountNumber) {
 
   const addr = await post(`${base}/registration/v2/address/keysgeneration`,
     { accountNumber: { value: accountNumber }, customerName: CUSTOMER_NAME, address: { ...address, residential: false } }, parent);
-  const authToken = addr.body.output?.mfaOptions?.[0]?.accountAuthToken;
-  if (addr.status !== 200 || !authToken) throw new Error(`Registration address step failed (${addr.status}): ${errText(addr)}`);
+  if (addr.status !== 200) throw new Error(`Registration address step failed (${addr.status}): ${errText(addr)}`);
 
-  const date = new Date();
-  date.setMonth(date.getMonth() - 1);
-  const inv = await post(`${base}/registration/v2/invoice/keysgeneration`,
-    { invoiceDetail: { ...INVOICE, date: date.toISOString().split('T')[0] }, customerName: CUSTOMER_NAME, locale: 'en_US' },
-    { ...parent, accountAuthToken: authToken });
-  const out = inv.body.output || {};
-  const childKey = out.child_Key || out.childKey;
-  const childSecret = out.child_secret || out.childSecret;
-  if (inv.status !== 200 || !childKey || !childSecret) throw new Error(`Registration invoice step failed (${inv.status}): ${errText(inv)}`);
+  // FedEx sometimes skips MFA for its test accounts and returns the child credentials straight
+  // from the address step; otherwise the invoice step (MFA) returns them.
+  let creds = addr.body.output?.credentials;
+  let registrationTxn = addr.body.transactionId;
+  if (!creds?.child_Key && !creds?.childKey) {
+    const authToken = addr.body.output?.mfaOptions?.[0]?.accountAuthToken;
+    if (!authToken) throw new Error(`Registration address step returned neither credentials nor MFA options: ${errText(addr)}`);
+    const date = new Date();
+    date.setMonth(date.getMonth() - 1);
+    const inv = await post(`${base}/registration/v2/invoice/keysgeneration`,
+      { invoiceDetail: { ...INVOICE, date: date.toISOString().split('T')[0] }, customerName: CUSTOMER_NAME, locale: 'en_US' },
+      { ...parent, accountAuthToken: authToken });
+    if (inv.status !== 200) throw new Error(`Registration invoice step failed (${inv.status}): ${errText(inv)}`);
+    creds = inv.body.output || {};
+    registrationTxn = inv.body.transactionId;
+  }
+  const childKey = creds.child_Key || creds.childKey;
+  const childSecret = creds.child_secret || creds.childSecret;
+  if (!childKey || !childSecret) throw new Error('FedEx registration returned no child credentials');
 
   const csp = await post(`${base}/oauth/token`, new URLSearchParams({
     grant_type: 'csp_credentials',
@@ -82,7 +91,7 @@ async function getTestAccountToken(accountNumber) {
   }).toString(), {}, true);
   if (csp.status !== 200 || !csp.body.access_token) throw new Error(`CSP token failed (${csp.status}): ${errText(csp)}`);
 
-  return { accessToken: csp.body.access_token, registrationTxn: inv.body.transactionId };
+  return { accessToken: csp.body.access_token, registrationTxn };
 }
 
 module.exports = { getTestAccountToken, TEST_ACCOUNTS };

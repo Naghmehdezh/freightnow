@@ -84,16 +84,16 @@ export default function SpotRatesPage() {
                 <tr key={r.id}>
                   <td>
                     <div className={a.mono}>{r.requestNumber}</div>
-                    <div className={a.small}>{TYPE[r.shipmentType]} · sent {day(r.submittedAt)}</div>
+                    <div className={a.small}>{TYPE[r.shipmentType]}, sent {day(r.submittedAt)}</div>
                   </td>
                   <td>
                     <div>{end(r.origin)}</div>
                     <div className={a.small}>→ {end(r.destination)}</div>
                   </td>
                   <td>
-                    <div>{r.weight ? `${Number(r.weight).toLocaleString('en-CA')} ${r.weightUnit}` : '—'}{r.skids ? ` · ${r.skids} skids` : r.pieces ? ` · ${r.pieces} pcs` : ''}</div>
+                    <div>{r.weight ? `${Number(r.weight).toLocaleString('en-CA')} ${r.weightUnit}` : '—'}{r.skids ? `, ${r.skids} skids` : r.pieces ? `, ${r.pieces} pcs` : ''}</div>
                     {r.chargeableWeightKg != null && <div className={a.small}>chargeable {r.chargeableWeightKg} kg</div>}
-                    <div className={a.small}>{[AIR[r.airService], r.oceanType, r.commodity].filter(Boolean).join(' · ')}</div>
+                    <div className={a.small}>{[AIR[r.airService], r.oceanType, r.commodity].filter(Boolean).join(', ')}</div>
                   </td>
                   <td>
                     <span className={`${a.badge} ${st.cls}`}>{st.label}</span>
@@ -103,14 +103,14 @@ export default function SpotRatesPage() {
                     {r.price != null ? (
                       <>
                         <div className={s.price}>{money(r.price, r.currency)}</div>
-                        <div className={a.small}>{r.serviceName}{r.transitDays != null ? ` · ${r.transitDays} days` : ''}</div>
+                        <div className={a.small}>{r.serviceName}{r.transitDays != null ? `, ${r.transitDays} days` : ''}</div>
                         {r.status === 'quoted' && <div className={a.small}>valid until {day(r.validUntil)}</div>}
                       </>
                     ) : '—'}
                   </td>
                   <td>
                     {r.status === 'quoted' && (
-                      <button className={a.btnPrimary} onClick={() => { setError(''); setBooking(r); }}>Book →</button>
+                      <button className={a.btnPrimary} onClick={() => { setError(''); setBooking(r); }}>Book</button>
                     )}
                   </td>
                 </tr>

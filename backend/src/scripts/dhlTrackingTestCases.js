@@ -54,6 +54,9 @@ const TEST_CASES = [
     id: 'Track_4',
     description: 'Multiple shipments — all-checkpoints / piece',
     trackingNumbers: ['JD014600011773791050', 'JD014600011800006571'],
+    // DHL's sample pieces are no longer in the test system ("No Shipments Found"); fall back to
+    // two pieces of our own 3-piece test shipment (AM-CA-US-TDM, waybill 8593799572).
+    fallbackNumbers: ['JD014600005394931405', 'JD014600005394931406'],
     trackingView: 'all-checkpoints',
     levelOfDetail: 'piece',
   },
@@ -66,9 +69,17 @@ const TEST_CASES = [
   },
   {
     id: 'Track_6',
-    description: 'Multiple shipments — all-checkpoints / piece (JD piece numbers)',
+    description: 'Multiple shipments — shipment-details-only / piece (JD piece numbers)',
     trackingNumbers: ['JD014600011773791050', 'JD014600011800006571'],
-    trackingView: 'all-checkpoints',
+    // DHL's sample pieces are no longer in the test system ("No Shipments Found"); fall back to
+    // two pieces of our own 3-piece test shipment (AM-CA-US-TDM, waybill 8593799572).
+    fallbackNumbers: ['JD014600005394931405', 'JD014600005394931406'],
+    // DHL's API refuses shipment-details-only with piece numbers (400 "can not be used when
+    // tracking by pieceTrackingNumber"), so the sheet's combination can't succeed as written.
+    // Closest valid request: the same view/detail for our two multi-piece test waybills.
+    alternativeNumbers: ['8593799572', '8593799583'],
+    alternativeNote: 'shipment-details-only is not allowed with piece numbers',
+    trackingView: 'shipment-details-only',
     levelOfDetail: 'piece',
   },
   {
@@ -96,7 +107,21 @@ function saveJSON(filename, data) {
 // ── Run a single tracking test case ───────────────────────────────
 
 async function runTestCase(tc) {
-  console.log(`\n━━━ ${tc.id}: ${tc.description} ━━━`);
+  if (await runTracking(tc, tc.trackingNumbers, '')) return true;
+  if (tc.fallbackNumbers) {
+    console.log(`  ↻ DHL's sample numbers failed — retrying with our own pieces`);
+    if (await runTracking(tc, tc.fallbackNumbers, '_fallback')) return true;
+  }
+  if (tc.alternativeNumbers) {
+    console.log(`  ↻ Retrying with waybill numbers (${tc.alternativeNote})`);
+    return runTracking(tc, tc.alternativeNumbers, '_waybills');
+  }
+  return false;
+}
+
+async function runTracking(tc, trackingNumbers, suffix) {
+  tc = { ...tc, trackingNumbers };
+  console.log(`\n━━━ ${tc.id}${suffix}: ${tc.description} ━━━`);
 
   const numbers = tc.trackingNumbers.join(',');
   // JD-prefix numbers are piece tracking numbers (20+ chars);
@@ -127,8 +152,8 @@ async function runTestCase(tc) {
 
   try {
     const response = await httpsGet(url);
-    saveJSON(`${tc.id}_request.json`, requestInfo);
-    saveJSON(`${tc.id}_response.json`, response);
+    saveJSON(`${tc.id}${suffix}_request.json`, requestInfo);
+    saveJSON(`${tc.id}${suffix}_response.json`, response);
 
     // Print summary
     const shipments = response.shipments || [];
@@ -144,8 +169,8 @@ async function runTestCase(tc) {
     return true;
   } catch (err) {
     console.error(`  ✗ Failed: ${err.message}`);
-    saveJSON(`${tc.id}_request.json`, requestInfo);
-    saveJSON(`${tc.id}_error.json`, {
+    saveJSON(`${tc.id}${suffix}_request.json`, requestInfo);
+    saveJSON(`${tc.id}${suffix}_error.json`, {
       error: err.message,
       statusCode: err.statusCode || null,
       body: err.body || null,

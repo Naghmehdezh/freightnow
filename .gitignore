@@ -54,3 +54,7 @@ backend/src/scripts/fedex_etd_samples/
 
 # Carrier API documents and onboarding emails (contain credentials) — keep out of git
 APIs/
+
+# Editor extension leftovers (not part of the app)
+.rmv/
+Users/

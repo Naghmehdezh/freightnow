@@ -36,6 +36,8 @@ const shipmentSchema = new Schema({
   recipientContact: { name: String, company: String, phone: String, email: String },
   destStreet: [String],
   holdAtLocation: { locationId: String, locationType: String, name: String, address: Schema.Types.Mixed },
+  // International parcels: what was declared to customs on the booking form (kept as the record).
+  customs: { description: String, hsCode: String, countryOfManufacture: String },
   dangerousGoods: {
     unNumber: String, properShippingName: String, hazardClass: String, packingGroup: String,
     quantity: Number, units: String, emergencyPhone: String,

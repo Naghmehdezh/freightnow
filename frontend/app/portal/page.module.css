@@ -1,255 +1,181 @@
-/* Stats row */
+/* Month figures: one strip, cells divided by rules rather than four floating cards */
 .statsRow {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 28px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
 
 .statCard {
-  background: var(--white);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px 24px;
-  box-shadow: var(--shadow);
+  padding: 16px 20px;
+  min-width: 0;
 }
+.statCard + .statCard { border-left: 1px solid var(--line-soft); }
 
 .statLabel {
-  font-family: var(--display);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text3);
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  margin-bottom: 8px;
-}
-
-.statValue {
-  font-family: var(--display);
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--navy);
-  line-height: 1;
-}
-
-.statSub {
-  font-size: 12px;
-  color: var(--text3);
-  margin-top: 6px;
-}
-
-.statSubUp {
-  color: var(--green);
-}
-
-/* Quick action banner */
-.quickAction {
-  background: linear-gradient(135deg, var(--navy-dark), var(--navy));
-  border: none;
-  border-radius: var(--radius-lg);
-  padding: 28px;
-  box-shadow: var(--shadow);
-  margin-bottom: 24px;
-}
-
-.quickActionInner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.quickActionTitle {
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
+  font-size: var(--fs-sm);
+  color: var(--slate);
   margin-bottom: 6px;
 }
 
-.quickActionSub {
-  font-size: 13px;
-  color: rgba(255,255,255,.6);
+.statValue {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
-.quickActionBtn {
-  flex-shrink: 0;
-  padding: 14px 28px;
-  background: var(--accent);
-  border-radius: 10px;
-  font-family: var(--display);
-  font-size: 14px;
-  font-weight: 700;
-  color: #fff;
-  text-decoration: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: 32px;
-  transition: all .2s;
-  border: none;
-  cursor: pointer;
+.statSub {
+  font-size: var(--fs-xs);
+  color: var(--mute);
+  margin-top: 4px;
 }
 
-.quickActionBtn:hover {
-  background: var(--accent-dark);
-}
-
-/* Section card header */
+/* Panel header (sits on the panel's top edge) */
 .scHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin: -20px -24px 0;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .scTitle {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--navy);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .scSub {
-  font-size: 13px;
-  color: var(--text3);
+  font-size: var(--fs-sm);
+  color: var(--slate);
   margin-top: 2px;
 }
 
 .scLink {
-  font-family: var(--display);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--navy);
-  text-decoration: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-shrink: 0;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--petrol-600);
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: var(--r-sm);
 }
+.scLink:hover { background: var(--petrol-50); }
 
-/* Table */
+/* Tables run edge to edge inside their panel */
 .tableWrap {
   overflow-x: auto;
+  margin: 0 -24px -20px;
 }
 
 .tableWrap table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .tableWrap th {
   text-align: left;
-  padding: 10px 14px;
-  font-family: var(--display);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--text3);
-  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--slate);
+  background: var(--sunken);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
+.tableWrap th:first-child,
+.tableWrap td:first-child { padding-left: 24px; }
+.tableWrap th:last-child,
+.tableWrap td:last-child { padding-right: 24px; }
 
 .tableWrap td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text2);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
+  white-space: nowrap;
 }
 
-.tableWrap td:first-child {
-  font-weight: 600;
-  color: var(--text);
-}
+.tableWrap tr:last-child td { border-bottom: none; }
+.tableWrap tbody tr:hover td { background: #faf8f4; }
 
-.tableWrap tr:last-child td {
-  border-bottom: none;
-}
+.right { text-align: right !important; }
+.money { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+.muted { color: var(--mute); font-size: var(--fs-sm); }
 
-.tableWrap tr:hover td {
-  background: var(--off-white);
-}
-
-/* Quote expiry badges */
+/* Quote expiry */
 .quoteExpiry {
-  font-family: var(--mono);
-  font-size: 11px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
-  border-radius: 10px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
+.quoteExpiryLive { color: var(--success); }
+.quoteExpiryExpired { color: var(--mute); text-decoration: line-through; }
 
-.quoteExpiryLive {
-  background: var(--green-light);
-  color: var(--green);
-}
-
-.quoteExpiryExpired {
-  background: var(--off-white);
-  color: var(--text3);
-  text-decoration: line-through;
-}
-
-/* Book quote button */
-.btnBookQuote {
-  padding: 5px 14px;
-  background: var(--navy);
-  border: none;
-  border-radius: 6px;
-  font-family: var(--display);
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
+/* Row actions */
+.btnBookQuote,
+.btnSecondary {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-weight: 500;
   cursor: pointer;
-  transition: all .15s;
   white-space: nowrap;
 }
-
-.btnBookQuote:hover {
-  background: var(--navy-dark);
-}
-
+.btnBookQuote { background: var(--petrol); border: 1px solid var(--petrol); color: #fff; }
+.btnBookQuote:hover { background: var(--petrol-700); }
 .btnBookQuote:disabled {
-  background: var(--border);
-  color: var(--text3);
-  cursor: not-allowed;
+  background: transparent;
+  border-color: transparent;
+  color: var(--mute);
+  cursor: default;
 }
+.btnSecondary { background: var(--surface); border: 1px solid var(--line); color: var(--ink); }
+.btnSecondary:hover { background: var(--sunken); }
+.btnSecondary:disabled { opacity: .5; cursor: progress; }
 
-/* Status badges */
+/* Status: dot + text */
 .statusBadge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--display);
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--ink);
   white-space: nowrap;
 }
+.statusBadge::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mute);
+}
+.statusDelivered::before { background: var(--success); }
+.statusTransit::before,
+.statusConfirmed::before { background: var(--petrol-600); }
+.statusPending::before { background: #d08a12; }
+.statusCancelled { color: var(--mute); }
+.statusCancelled::before { background: var(--line); }
 
-.statusDelivered {
-  background: var(--green-light);
-  color: var(--green);
+@media (max-width: 960px) {
+  .statsRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .statCard:nth-child(3) { border-left: none; }
+  .statCard:nth-child(n + 3) { border-top: 1px solid var(--line-soft); }
 }
 
-.statusTransit {
-  background: var(--sky);
-  color: var(--navy);
-}
-
-.statusPending {
-  background: var(--amber-light);
-  color: var(--amber);
-}
-
-.statusConfirmed {
-  background: var(--sky);
-  color: var(--navy);
-}
-
-.statusCancelled {
-  background: var(--off-white);
-  color: var(--text3);
+@media (max-width: 720px) {
+  .scHeader { margin: -16px -16px 0; padding: 12px 16px; }
+  .tableWrap { margin: 0 -16px -16px; }
+  .tableWrap th:first-child, .tableWrap td:first-child { padding-left: 16px; }
+  .tableWrap th:last-child, .tableWrap td:last-child { padding-right: 16px; }
 }

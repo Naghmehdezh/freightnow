@@ -30,14 +30,13 @@
 }
 
 .leftLogo img {
-  height: 44px;
+  height: 40px;
   width: auto;
   filter: brightness(0) invert(1);
 }
 
 .backHome {
-  font-family: var(--display);
-  font-size: 12px;
+    font-size: var(--fs-sm);
   color: rgba(255,255,255,.45);
   text-decoration: none;
   display: flex;
@@ -56,9 +55,8 @@
 }
 
 .leftContent h2 {
-  font-family: var(--display);
-  font-size: 32px;
-  font-weight: 800;
+    font-size: 32px;
+  font-weight: 600;
   color: var(--white);
   line-height: 1.15;
   letter-spacing: -.02em;
@@ -70,7 +68,7 @@
 }
 
 .leftContent p {
-  font-size: 14px;
+  font-size: var(--fs-base);
   color: rgba(255,255,255,.6);
   line-height: 1.7;
   max-width: 340px;
@@ -88,25 +86,24 @@
 .tierCard {
   background: rgba(255,255,255,.06);
   border: 1px solid rgba(255,255,255,.1);
-  border-radius: 10px;
+  border-radius: var(--r-sm);
   padding: 14px 16px;
 }
 
 .tierCard h4 {
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 700;
+    font-size: var(--fs-base);
+  font-weight: 600;
   color: var(--white);
   margin-bottom: 3px;
 }
 
 .tierCard p {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: rgba(255,255,255,.45);
 }
 
 .leftBottom {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: rgba(255,255,255,.3);
   position: relative;
   z-index: 1;
@@ -126,16 +123,15 @@
 }
 
 .authBox h1 {
-  font-family: var(--display);
-  font-size: 26px;
-  font-weight: 800;
+    font-size: 26px;
+  font-weight: 600;
   color: var(--navy);
   margin-bottom: 4px;
   letter-spacing: -.02em;
 }
 
 .authBox > p {
-  font-size: 14px;
+  font-size: var(--fs-base);
   color: var(--text3);
   margin-bottom: 28px;
 }
@@ -151,8 +147,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--display);
-  font-size: 12px;
+    font-size: var(--fs-sm);
   font-weight: 600;
 }
 
@@ -163,8 +158,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   background: var(--border);
   color: var(--text3);
   transition: all .2s;
@@ -186,7 +181,7 @@
 
 .stepActive .stepLabel {
   color: var(--navy);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .stepDivider {
@@ -197,13 +192,12 @@
 
 .btnAuth {
   width: 100%;
-  height: 48px;
+  height: 40px;
   background: var(--navy);
   border: none;
   border-radius: var(--radius);
-  font-family: var(--display);
-  font-size: 15px;
-  font-weight: 700;
+    font-size: var(--fs-md);
+  font-weight: 600;
   color: var(--white);
   cursor: pointer;
   transition: all .2s;
@@ -226,12 +220,11 @@
 
 .btnBack {
   width: 100%;
-  height: 44px;
+  height: 40px;
   background: transparent;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-family: var(--display);
-  font-size: 14px;
+    font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text2);
   cursor: pointer;
@@ -246,7 +239,7 @@
 
 .authSwitch {
   text-align: center;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--text3);
   margin-top: 20px;
 }
@@ -259,21 +252,20 @@
 
 .eulaBox {
   background: var(--off-white);
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
   padding: 16px;
   max-height: 140px;
   overflow-y: auto;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text2);
   line-height: 1.7;
   margin-bottom: 14px;
 }
 
 .eulaBox h4 {
-  font-family: var(--display);
-  font-size: 12px;
-  font-weight: 700;
+    font-size: var(--fs-sm);
+  font-weight: 600;
   color: var(--navy);
   margin-bottom: 8px;
 }
@@ -283,7 +275,7 @@
   align-items: flex-start;
   gap: 10px;
   margin-bottom: 16px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--text2);
 }
 
@@ -313,15 +305,14 @@
 }
 
 .successState h2 {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 800;
+    font-size: 22px;
+  font-weight: 600;
   color: var(--navy);
   margin-bottom: 8px;
 }
 
 .successState p {
-  font-size: 14px;
+  font-size: var(--fs-base);
   color: var(--text3);
   margin-bottom: 28px;
 }
@@ -329,9 +320,9 @@
 .error {
   background: var(--red-light);
   color: var(--red);
-  font-size: 13px;
+  font-size: var(--fs-base);
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   margin-bottom: 16px;
 }
 

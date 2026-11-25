@@ -1,103 +1,54 @@
-const { qbRequest, getValidToken, getPaymentsBaseUrl } = require('./quickbooks.service');
-const { quickbooks } = require('../config/env');
-const Payment = require('../models/Payment');
-const PaymentMethod = require('../models/PaymentMethod');
+const { getValidToken, getPaymentsBaseUrl, ENVIRONMENT } = require('./quickbooks.service');
+const { convert } = require('../utils/currency');
 
-// Tokenize a credit card via QuickBooks Payments (called when user adds a card)
-async function tokenizeCard(cardData) {
+// Card payments without storing cards: the customer's browser sends the card straight to
+// QuickBooks Payments (POST /quickbooks/v4/payments/tokens, no IFF credentials needed) and gets
+// a one-time token. The server only ever sees that token and charges it once, here.
+
+// Charge a one-time card token. Returns the QuickBooks charge; throws with the decline reason.
+async function chargeToken({ token, amount, currency, requestId, usdToCad }) {
+  currency = currency || 'CAD';
+  // Sandbox only: a US test company can't take CAD (and a Canadian one can't take USD), so the
+  // test charge is made for the same amount in the test company's currency. The booking still
+  // records the price in the customer's currency. Live charges are never converted.
+  if (ENVIRONMENT === 'sandbox') {
+    const home = await require('./qbInvoices.service').homeCurrency().catch(() => currency);
+    if (home !== currency) {
+      console.log(`[QB SANDBOX] Test company bills in ${home}: charging ${convert(amount, currency, home, usdToCad)} ${home} for ${Number(amount).toFixed(2)} ${currency}`);
+      amount = convert(amount, currency, home, usdToCad);
+      currency = home;
+    }
+  }
   const tokenDoc = await getValidToken();
-  const baseUrl = getPaymentsBaseUrl();
-
-  const res = await fetch(`${baseUrl}/quickbooks/v4/payments/tokens`, {
+  const res = await fetch(`${getPaymentsBaseUrl()}/quickbooks/v4/payments/charges`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${tokenDoc.accessToken}`,
+      // Same Request-Id = same charge: QuickBooks won't charge twice if a request is retried.
+      'Request-Id': requestId,
     },
     body: JSON.stringify({
-      card: {
-        number: cardData.number,
-        expMonth: cardData.expMonth,
-        expYear: cardData.expYear,
-        cvc: cardData.cvc,
-        name: cardData.name,
-      },
+      amount: Number(amount).toFixed(2),
+      currency,
+      token,
+      context: { mobile: false, isEcommerce: true },
     }),
   });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Card tokenization failed: ${err}`);
+  let data = {};
+  try { data = await res.json(); } catch { /* empty body */ }
+  if (!res.ok || data.status !== 'CAPTURED') {
+    // QuickBooks puts the field name in "message" ("token") and the explanation in "detail".
+    const e = data.errors?.[0];
+    let reason = (e && (/\s/.test(e.message || '') ? e.message : e.detail || e.message)) || data.status || `HTTP ${res.status}`;
+    if (/card is invalid|card type/i.test(reason)) reason = 'the card number was not accepted. Please check it';
+    // The connected QuickBooks company can't take this currency (e.g. a US company and a CAD rate).
+    if (/currency is invalid/i.test(reason)) reason = `the connected QuickBooks company doesn't accept ${currency} card payments`;
+    const err = new Error(reason);
+    err.declined = true;
+    throw err;
   }
-
-  const data = await res.json();
-  return data.value; // The token string
-}
-
-// Charge a tokenized card via QuickBooks Payments
-async function chargeCard({ bookingId, companyId, userId, amount, currency, paymentMethodId }) {
-  const paymentMethod = await PaymentMethod.findOne({ _id: paymentMethodId, company: companyId });
-  if (!paymentMethod) throw new Error('Payment method not found');
-  if (!paymentMethod.qbCardToken) throw new Error('Payment method has no QuickBooks card token');
-
-  const tokenDoc = await getValidToken();
-  const baseUrl = getPaymentsBaseUrl();
-
-  // Create the charge
-  const chargePayload = {
-    amount: amount.toFixed(2),
-    currency: currency || 'CAD',
-    token: paymentMethod.qbCardToken,
-    context: {
-      mobile: false,
-      isEcommerce: true,
-    },
-  };
-
-  const res = await fetch(`${baseUrl}/quickbooks/v4/payments/charges`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${tokenDoc.accessToken}`,
-      'Request-Id': `booking-${bookingId}-${Date.now()}`,
-    },
-    body: JSON.stringify(chargePayload),
-  });
-
-  let responseData;
-  try { responseData = await res.json(); } catch { responseData = {}; }
-
-  // In sandbox mode, if charge fails, mock a successful payment
-  if (quickbooks.environment === 'sandbox' && (!res.ok || responseData.status !== 'CAPTURED')) {
-    console.log('[QB-PAYMENTS] Sandbox charge declined — mocking successful payment for dev');
-    const payment = await Payment.create({
-      booking: bookingId,
-      user: userId,
-      amount,
-      currency: currency || 'CAD',
-      qbTransactionId: `sandbox-mock-${Date.now()}`,
-      status: 'succeeded',
-    });
-    return { payment, transactionId: payment.qbTransactionId };
-  }
-
-  // Record the payment attempt regardless of outcome
-  const payment = await Payment.create({
-    booking: bookingId,
-    user: userId,
-    amount,
-    currency: currency || 'CAD',
-    qbTransactionId: responseData.id || null,
-    status: res.ok && responseData.status === 'CAPTURED' ? 'succeeded' : 'failed',
-    failureReason: !res.ok ? (responseData.errors?.[0]?.message || 'Charge failed') : undefined,
-  });
-
-  if (!res.ok || responseData.status !== 'CAPTURED') {
-    const reason = responseData.errors?.[0]?.message || responseData.status || 'Payment declined';
-    throw new Error(reason);
-  }
-
-  return { payment, transactionId: responseData.id };
+  return data; // { id, status: 'CAPTURED', amount, currency, card: { number: 'xxxx1111', cardType }, ... }
 }
 
 // Refund a charge
@@ -123,4 +74,4 @@ async function refundCharge(qbTransactionId, amount) {
   return res.json();
 }
 
-module.exports = { tokenizeCard, chargeCard, refundCharge };
+module.exports = { chargeToken, refundCharge };

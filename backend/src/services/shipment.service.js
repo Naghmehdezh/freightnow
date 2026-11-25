@@ -48,6 +48,7 @@ async function createShipmentForBooking(session, booking, quote, selectedRate, i
     }),
     ...(input.holdAtLocation && { holdAtLocation: input.holdAtLocation }),
     ...(input.dangerousGoods && { dangerousGoods: input.dangerousGoods }),
+    ...(input.customs && { customs: input.customs }),
     status: 'pending',
     estimatedDelivery: selectedRate.estimatedDelivery,
   }], { session });
@@ -86,7 +87,7 @@ async function getUserShipments(userId, { status, page = 1, limit = 10, search }
       .sort({ bookedAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('booking', 'bookingNumber sellRate currency')
+      .populate('booking', 'bookingNumber sellRate currency chargeAmount chargeCurrency status paymentStatus qbInvoiceLink payBy')
       .lean(),
     Shipment.countDocuments(where),
   ]);
@@ -312,12 +313,16 @@ function _buildCarrierDetails(quote, selectedRate, company, input = {}) {
   // International shipments need customs clearance
   if (isInternational) {
     const customsValue = quote.declaredValue || 100;
+    const customs = input.customs; // from the booking form (international parcels)
+    // DHL wants the shipment description to match the first line item.
+    if (customs?.description) details.commodity = customs.description;
     details.customsClearanceDetail = {
       dutiesPayment: { paymentType: 'SENDER' },
       commodities: [{
         numberOfPieces: quote.pieces || 1,
-        description: quote.commodity || 'Printed materials and documents',
-        countryOfManufacture: originCountry,
+        description: customs?.description || quote.commodity || 'Printed materials and documents',
+        countryOfManufacture: customs?.countryOfManufacture || originCountry,
+        ...(customs?.hsCode && { harmonizedCode: customs.hsCode }),
         weight: { units: 'LB', value: quote.weight || 1 },
         quantity: quote.pieces || 1,
         quantityUnits: 'EA',

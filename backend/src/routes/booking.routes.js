@@ -20,7 +20,14 @@ const bookSchema = z.object({
   quoteId: objectId(),
   quoteRateId: objectId(),
   customerReference: z.string().optional(),
-  paymentMethodId: z.string().optional(),
+  // Card customers pay now by card (one-time QuickBooks Payments token from the browser), or
+  // choose a QuickBooks invoice link: the booking is reserved and the carrier booked once paid.
+  paymentMethod: z.enum(['card', 'qb_link']).optional(),
+  // Currency the customer pays in (they can view and pay in CAD or USD).
+  chargeCurrency: z.enum(['CAD', 'USD']).optional(),
+  cardToken: z.string().trim().min(10).max(200).optional(),
+  // The customer confirmed weights/dimensions are accurate and accepted price adjustments.
+  measurementsConfirmed: z.literal(true, { errorMap: () => ({ message: 'Please confirm that the weights and dimensions are accurate.' }) }),
   // Street address and contact for each end — the quote only has city/postal code.
   shipper: z.object(contactParty).optional(), // defaults to the company profile
   recipient: z.object({ ...contactParty, email: z.string().email().optional() }),
@@ -38,6 +45,12 @@ const bookSchema = z.object({
     }),
   }).optional(),
   // Fully regulated dangerous goods / small quantity exception (parcel).
+  // International parcels: what's inside, for customs (DHL and FedEx need the HS code).
+  customs: z.object({
+    description: z.string().trim().min(3).max(70),
+    hsCode: z.string().trim().transform(v => v.replace(/[.\s]/g, '')).pipe(z.string().regex(/^\d{6,10}$/, 'HS code is 6 to 10 digits, e.g. 6109.10')),
+    countryOfManufacture: z.string().trim().length(2).transform(v => v.toUpperCase()),
+  }).optional(),
   dangerousGoods: z.object({
     unNumber: z.string().trim().regex(/^(UN|ID)?\d{4}$/i, 'UN number is 4 digits, e.g. UN1263'),
     properShippingName: z.string().trim().min(1).max(100),
@@ -62,8 +75,21 @@ router.post('/', authenticate, validate(bookSchema), async (req, res, next) => {
     if (result.manualCarrierBooking) {
       response.manualCarrierBooking = result.manualCarrierBooking;
     }
+    if (result.pickup) response.pickup = result.pickup; // carrier pickup confirmation / "IFF will arrange it"
+    if (result.creditApplied) response.creditApplied = result.creditApplied; // store credit used
+    if (result.awaitingPayment) Object.assign(response, { awaitingPayment: true, paymentLink: result.paymentLink, payBy: result.payBy });
     res.status(201).json(response);
   } catch (err) { next(err); }
+});
+
+// "I've paid — check now" for a booking reserved with a QuickBooks payment link.
+router.post('/:id/check-payment', authenticate, async (req, res, next) => {
+  try { res.json(await bookingService.checkPaymentForUser(req.user, req.params.id)); } catch (err) { next(err); }
+});
+
+// Sandbox only: stand-in for paying on the (placeholder) sandbox payment page.
+router.post('/:id/test-payment', authenticate, async (req, res, next) => {
+  try { res.json(await bookingService.simulateLinkPaymentForUser(req.user, req.params.id)); } catch (err) { next(err); }
 });
 
 router.get('/', authenticate, async (req, res, next) => {

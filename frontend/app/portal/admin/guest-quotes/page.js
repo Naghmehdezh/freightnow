@@ -99,18 +99,18 @@ export default function GuestQuotesPage() {
                       <div className={a.small}>{day(r.submittedAt)}</div>
                     </td>
                     <td>
-                      <div>{r.name}{r.company ? ` · ${r.company}` : ''}</div>
-                      <div className={a.small}><a href={`mailto:${r.email}`}>{r.email}</a> · <a href={`tel:${r.phone}`}>{r.phone}</a></div>
+                      <div>{r.name}{r.company ? `, ${r.company}` : ''}</div>
+                      <div className={a.small}><a href={`mailto:${r.email}`}>{r.email}</a>, <a href={`tel:${r.phone}`}>{r.phone}</a></div>
                     </td>
                     <td>
                       <div>{r.origin} <span className={a.small}>({END[r.originType]})</span></div>
                       <div className={a.small}>→ {r.destination} ({END[r.destinationType]})</div>
                     </td>
                     <td>
-                      <div>{MODE[r.mode]}{r.volume ? ` · ${VOLUME[r.volume]}` : ''}</div>
-                      <div className={a.small}>{pieces ? `${pieces} item(s)` : 'no item details'}{r.hazardous ? ' · ⚠ hazardous' : ''}</div>
+                      <div>{MODE[r.mode]}{r.volume ? `, ${VOLUME[r.volume]}` : ''}</div>
+                      <div className={a.small}>{pieces ? `${pieces} item(s)` : 'no item details'}{r.hazardous ? ', hazardous' : ''}</div>
                       {(r.items || []).map((it, i) => (
-                        <div key={i} className={a.small}>{it.quantity} × {it.length}×{it.width}×{it.height} {it.dimUnit} · {it.weight} {it.weightUnit} each</div>
+                        <div key={i} className={a.small}>{it.quantity} × {it.length}×{it.width}×{it.height} {it.dimUnit}, {it.weight} {it.weightUnit} each</div>
                       ))}
                     </td>
                     <td>
@@ -122,14 +122,14 @@ export default function GuestQuotesPage() {
                       {r.quotedRate != null ? (
                         <>
                           <div className={s.price}>{money(r.quotedRate)} {r.quotedCurrency}</div>
-                          <div className={a.small}>cost {money(r.carrierCost)} · margin <span className={r.quotedRate - r.carrierCost < 0 ? a.negative : ''}>{money(r.quotedRate - r.carrierCost)}</span></div>
+                          <div className={a.small}>cost {money(r.carrierCost)}, margin <span className={r.quotedRate - r.carrierCost < 0 ? a.negative : ''}>{money(r.quotedRate - r.carrierCost)}</span></div>
                           {r.validUntil && <div className={a.small}>valid until {new Date(r.validUntil).toLocaleDateString('en-CA')}</div>}
                         </>
                       ) : '—'}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {r.status !== 'closed' && <button className={a.linkBtn} onClick={() => setPricing(r)}>{r.quotedRate != null ? 'Re-price' : 'Price'}</button>}
-                      {r.status !== 'closed' && r.status !== 'declined' && <> · <button className={a.linkBtn} onClick={() => setDeclining(r)}>Decline</button></>}
+                      {r.status !== 'closed' && r.status !== 'declined' && <> <button className={a.linkBtn} onClick={() => setDeclining(r)}>Decline</button></>}
                       <div style={{ marginTop: 6 }}>
                         <select className={a.input} value={MANUAL_STATUS.includes(r.status) ? r.status : ''} disabled={saving === r.id} onChange={e => e.target.value && update(r, { status: e.target.value })} aria-label={`Status of ${r.requestNumber}`}>
                           {!MANUAL_STATUS.includes(r.status) && <option value="">{STATUS[r.status]?.label}</option>}
@@ -150,9 +150,9 @@ export default function GuestQuotesPage() {
                           {r.notes && <div><span>Customer notes</span><b style={{ whiteSpace: 'pre-line' }}>{r.notes}</b></div>}
                           <div><span>Came from</span><b>{r.source === 'home' ? 'Home page quote card' : 'Request a quote page'}</b></div>
                           {r.quotedRate != null && <>
-                            <div><span>Price sent</span><b>{money(r.quotedRate)} {r.quotedCurrency}{r.serviceName ? ` · ${r.serviceName}` : ''}{r.transitDays != null ? ` · ${r.transitDays} days` : ''}</b></div>
-                            <div><span>Carrier cost · carrier used</span><b>{money(r.carrierCost)} {r.quotedCurrency}{r.carrierName ? ` · ${r.carrierName}` : ''}</b></div>
-                            <div><span>Sent by · on</span><b>{r.quotedBy || '—'} · {day(r.quotedAt)}</b></div>
+                            <div><span>Price sent</span><b>{money(r.quotedRate)} {r.quotedCurrency}{r.serviceName ? `, ${r.serviceName}` : ''}{r.transitDays != null ? `, ${r.transitDays} days` : ''}</b></div>
+                            <div><span>Carrier cost and carrier</span><b>{money(r.carrierCost)} {r.quotedCurrency}{r.carrierName ? `, ${r.carrierName}` : ''}</b></div>
+                            <div><span>Sent by</span><b>{r.quotedBy || '—'}, {day(r.quotedAt)}</b></div>
                           </>}
                           {r.declinedAt && <div><span>Declined on</span><b>{day(r.declinedAt)}</b></div>}
                           {r.customerNote && <div><span>Message to customer</span><b>{r.customerNote}</b></div>}
@@ -226,7 +226,7 @@ function PriceModal({ request, onClose, onSaved }) {
     <div className={a.overlay} onClick={onClose}>
       <div className={a.modal} onClick={e => e.stopPropagation()}>
         <div className={a.cardTitle}>{request.quotedRate != null ? 'Re-price' : 'Price'} {request.requestNumber}</div>
-        <div className={a.sub}>{request.name}{request.company ? ` (${request.company})` : ''} · {request.origin} → {request.destination} · {MODE[request.mode]}{request.volume ? ` ${VOLUME[request.volume]}` : ''}</div>
+        <div className={a.sub}>{request.name}{request.company ? ` (${request.company})` : ''}, {request.origin} → {request.destination}, {MODE[request.mode]}{request.volume ? ` ${VOLUME[request.volume]}` : ''}</div>
         {request.quotedRate != null && <div className={a.info}>Saving replaces the price sent on {day(request.quotedAt)} ({money(request.quotedRate)} {request.quotedCurrency}). The earlier price stays in the activity log.</div>}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <label className={a.field}>Carrier cost *<input className={a.input} type="number" min="0" step="0.01" value={form.carrierCost} onChange={set('carrierCost')} /></label>

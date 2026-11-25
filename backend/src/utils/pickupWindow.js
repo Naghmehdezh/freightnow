@@ -1,10 +1,10 @@
 // Pickup window the customer chooses with the pickup date: between 08:00 and 17:00, at least
-// 4 hours long (ready at 08:00 → close no earlier than 12:00). Times are "HH:MM", local to the
+// 3 hours long (ready at 08:00 → close no earlier than 11:00). Times are "HH:MM", local to the
 // pickup address.
 
 const EARLIEST = '08:00';
 const LATEST = '17:00';
-const MIN_HOURS = 4;
+const MIN_HOURS = 3;
 
 const minutes = t => {
   const [h, m] = t.split(':').map(Number);

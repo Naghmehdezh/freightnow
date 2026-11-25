@@ -19,6 +19,8 @@ const invoiceSchema = new Schema({
   currency: { type: String, default: 'CAD' },
   status: { type: String, default: 'pending' },
   paidAt: Date,
+  dueDate: Date, // monthly accounts: the statement's due date
+  statement: { type: Schema.Types.ObjectId, ref: 'Statement' }, // monthly statement it was billed on
   items: [invoiceItemSchema],
 }, { timestamps: { createdAt: 'issuedAt', updatedAt: false } });
 

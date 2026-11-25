@@ -39,7 +39,7 @@ const rateRequestSchema = z.object({
     freightClass: z.string().optional(),
   })).max(30).optional(),
   pickupDate: z.string().optional(),
-  // Pickup window on the pickup date ("HH:MM"): 08:00–17:00, at least 4 hours.
+  // Pickup window on the pickup date ("HH:MM"): 08:00–17:00, at least 3 hours.
   pickupReadyTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   pickupCloseTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   currency: z.enum(['CAD', 'USD']).optional(),

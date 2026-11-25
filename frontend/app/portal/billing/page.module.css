@@ -1,355 +1,253 @@
-.header {
+/* Panel title sits on the panel's top edge */
+.sectionTitle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  gap: 8px;
+  margin: -20px -24px 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
 }
 
-.title {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--navy);
-}
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.title { font-size: var(--fs-md); font-weight: 600; color: var(--ink); }
+.sub { font-size: var(--fs-sm); color: var(--slate); margin-top: 2px; }
 
-.sub {
-  font-size: 13px;
-  color: var(--text3);
-  margin-top: 2px;
-}
-
+/* Figures: one strip divided by rules */
 .statsRow {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.statCard {
-  background: var(--off-white);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 20px;
-}
-
-.statLabel {
-  font-family: var(--display);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--text3);
-  margin-bottom: 6px;
-}
-
-.statValue {
-  font-family: var(--display);
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--navy);
-}
-
-.sectionTitle {
-  font-family: var(--display);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--navy);
-  margin-bottom: 16px;
-}
-
-.paymentCards {
-  display: flex;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 20px;
-  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
+.statsInset { margin-bottom: 12px; background: var(--sunken); }
 
-.paymentCard {
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  min-width: 240px;
-  background: #fff;
-}
+.statCard { padding: 14px 20px; min-width: 0; }
+.statCard + .statCard { border-left: 1px solid var(--line-soft); }
+.statLabel { font-size: var(--fs-sm); color: var(--slate); margin-bottom: 4px; }
+.statValue { font-size: var(--fs-xl); font-weight: 600; color: var(--ink); line-height: 1.2; font-variant-numeric: tabular-nums; }
 
-.paymentCard.default {
-  border-color: var(--navy);
-  background: var(--sky);
-}
+.qbMessage { margin: 0 0 14px; font-size: var(--fs-base); line-height: 1.55; color: var(--slate); max-width: 80ch; }
+.muted { font-size: var(--fs-xs); color: var(--mute); margin-top: 2px; line-height: 1.45; }
+.qbMessage:last-child { margin-bottom: 0; }
+.sectionTitle + .tableWrap { margin-top: -16px; border-top: 0; }
 
-.cardType {
-  font-family: var(--display);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text2);
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-
-.cardNumber {
-  font-family: var(--mono);
-  font-size: 14px;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-
-.cardExpiry {
-  font-size: 12px;
-  color: var(--text3);
-}
-
-.defaultBadge {
-  font-size: 10px;
-  font-weight: 600;
-  font-family: var(--display);
-  background: var(--navy);
-  color: #fff;
-  padding: 2px 8px;
-  border-radius: 10px;
-  display: inline-block;
-  margin-top: 8px;
-}
-
-.btnAdd {
-  padding: 9px 18px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text2);
-  background: #fff;
-  cursor: pointer;
-  transition: all .15s;
-}
-
-.btnAdd:hover {
-  border-color: var(--navy);
-  color: var(--navy);
-}
-
-.tableWrap {
-  overflow-x: auto;
-}
-
-.tableWrap table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
+/* Tables run edge to edge inside their panel */
+.tableWrap { overflow-x: auto; margin: 0 -24px -20px; border-top: 1px solid var(--line-soft); }
+.tableWrap table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
 .tableWrap th {
   text-align: left;
-  padding: 10px 14px;
-  font-family: var(--display);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--text3);
-  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--slate);
+  background: var(--sunken);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
-
 .tableWrap td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text2);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
+  vertical-align: middle;
 }
+.tableWrap th:first-child, .tableWrap td:first-child { padding-left: 24px; }
+.tableWrap th:last-child, .tableWrap td:last-child { padding-right: 24px; }
+.tableWrap tbody tr:last-child td { border-bottom: none; }
+.tableWrap tbody tr:hover td { background: #faf8f4; }
 
-.tableWrap td:first-child {
-  font-weight: 600;
-  color: var(--text);
-}
+.right { text-align: right !important; }
+.money { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.actions { white-space: nowrap; text-align: right; }
 
-.tableWrap tr:last-child td {
-  border-bottom: none;
-}
+/* Status: dot + text */
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--ink); white-space: nowrap; }
+.badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--mute); }
+.badgePaid::before { background: var(--success); }
+.badgePending::before { background: #d08a12; }
+.badgeOverdue { color: var(--danger); }
+.badgeOverdue::before { background: var(--danger); }
 
-.tableWrap tr:hover td {
-  background: var(--off-white);
-}
-
-.badge {
-  display: inline-flex;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--display);
-}
-
-.badgePaid { background: var(--green-light); color: var(--green); }
-.badgePending { background: var(--amber-light); color: var(--amber); }
-.badgeOverdue { background: var(--red-light); color: var(--red); }
-
+/* Buttons */
+.btnAdd,
 .btnDownload {
-  padding: 5px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: 6px;
-  font-family: var(--display);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text2);
-  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--ink);
   cursor: pointer;
-  transition: all .15s;
+  white-space: nowrap;
 }
+.btnAdd { height: var(--h-md); padding: 0 14px; font-size: var(--fs-base); }
+.btnAdd:hover, .btnDownload:hover { background: var(--sunken); }
+.btnAdd:disabled, .btnDownload:disabled { opacity: .5; cursor: not-allowed; }
 
-.btnDownload:hover {
-  border-color: var(--navy);
-  color: var(--navy);
-}
+/* Saved cards (legacy display) */
+.paymentCards { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.paymentCard { min-width: 240px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.paymentCard.default { border-color: var(--petrol); background: var(--petrol-50); }
+.cardType { font-size: var(--fs-sm); color: var(--slate); margin-bottom: 6px; }
+.cardNumber { font-family: var(--font-mono); font-size: var(--fs-base); color: var(--ink); margin-bottom: 2px; }
+.cardExpiry { font-size: var(--fs-sm); color: var(--mute); }
+.defaultBadge { display: inline-block; margin-top: 8px; font-size: var(--fs-xs); font-weight: 500; color: var(--petrol); }
 
-/* Add card modal */
+/* Dialogs */
 .cardFormOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  padding: 16px;
+  background: rgba(23, 34, 45, .4);
 }
 
 .cardForm {
-  background: #fff;
-  border-radius: 12px;
-  padding: 28px 32px;
-  width: 400px;
-  max-width: 90vw;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  width: 440px;
+  max-width: 100%;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 20px 24px;
+  background: var(--surface);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
 }
 
 .cardFormTitle {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--navy);
-  margin-bottom: 20px;
+  margin: -20px -24px 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .cardFormError {
-  background: var(--red-light);
-  color: var(--red);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 8px 12px;
-  border-radius: 6px;
-  margin-bottom: 16px;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--danger);
 }
 
-.cardFormLabel {
-  display: block;
-  font-family: var(--display);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: var(--text3);
-  margin-bottom: 12px;
-}
+.cardFormLabel { display: block; margin-bottom: 12px; font-size: var(--fs-sm); font-weight: 500; color: var(--slate); }
 
 .cardFormInput {
   display: block;
   width: 100%;
   margin-top: 4px;
-  padding: 9px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: 6px;
-  font-family: var(--mono);
-  font-size: 14px;
-  color: var(--text);
-  outline: none;
-  transition: border-color .15s;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-base);
+  line-height: 1.45;
+  color: var(--ink);
+  resize: vertical;
 }
+.cardFormInput:focus { outline: none; border-color: var(--petrol-600); box-shadow: 0 0 0 3px rgba(21, 90, 133, .14); }
 
-.cardFormInput:focus {
-  border-color: var(--navy);
-}
-
-.cardFormRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
-}
+.cardFormRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
 .cardFormActions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
+  gap: 8px;
+  margin: 20px -24px -20px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--sunken);
+  border-radius: 0 0 var(--r-md) var(--r-md);
 }
 
 .cardFormSubmit {
-  padding: 9px 20px;
-  border: none;
-  border-radius: 8px;
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 600;
+  height: var(--h-md);
+  padding: 0 16px;
+  border: 1px solid var(--petrol);
+  border-radius: var(--r-sm);
+  background: var(--petrol);
+  font-size: var(--fs-base);
+  font-weight: 500;
   color: #fff;
-  background: var(--navy);
   cursor: pointer;
-  transition: opacity .15s;
 }
+.cardFormSubmit:hover { background: var(--petrol-700); }
+.cardFormSubmit:disabled { opacity: .5; cursor: not-allowed; }
 
-.cardFormSubmit:hover {
-  opacity: 0.85;
-}
-
-.cardFormSubmit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* QuickBooks connection section */
-.qbSection {
-  margin-bottom: 24px;
-}
-
-.qbConnected {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--text2);
-}
-
-.qbDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--green);
-  flex-shrink: 0;
-}
-
-.qbDisconnected {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.qbMessage {
-  font-size: 13px;
-  color: var(--text3);
-  margin: 0;
-}
+/* QuickBooks connection (IFF admin) */
+.qbSection { }
+.qbConnected { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: var(--fs-base); color: var(--slate); }
+.qbDot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.qbActions { margin-left: auto; display: flex; gap: 8px; }
+.qbDisconnected { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; }
+.qbDisconnected .qbMessage { margin: 0; }
 
 .qbConnectBtn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 600;
+  height: var(--h-md);
+  padding: 0 16px;
+  border: 1px solid var(--petrol);
+  border-radius: var(--r-sm);
+  background: var(--petrol);
+  font-size: var(--fs-base);
+  font-weight: 500;
   color: #fff;
-  background: #2ca01c;
   cursor: pointer;
-  text-decoration: none;
   white-space: nowrap;
-  transition: opacity .15s;
+}
+.qbConnectBtn:hover { background: var(--petrol-700); }
+.qbConnectBtn:disabled { opacity: .5; cursor: progress; }
+
+.sandboxTag {
+  padding: 1px 6px;
+  border: 1px solid var(--warning-line);
+  border-radius: var(--r-sm);
+  background: var(--warning-bg);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--warning);
 }
 
-.qbConnectBtn:hover {
-  opacity: 0.85;
+.qbNoticeOk,
+.qbNoticeError {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+}
+.qbNoticeOk { background: var(--success-bg); border: 1px solid var(--success-line); color: var(--success); }
+.qbNoticeError { background: var(--danger-bg); border: 1px solid var(--danger-line); color: var(--danger); }
+
+.holdBanner {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  color: #7a1913;
+}
+
+@media (max-width: 720px) {
+  .sectionTitle, .cardFormTitle { margin: -16px -16px 14px; padding: 12px 16px; }
+  .tableWrap { margin: 0 -16px -16px; }
+  .tableWrap th:first-child, .tableWrap td:first-child { padding-left: 16px; }
+  .tableWrap th:last-child, .tableWrap td:last-child { padding-right: 16px; }
+  .statsRow { grid-template-columns: 1fr; }
+  .statCard + .statCard { border-left: 0; border-top: 1px solid var(--line-soft); }
+  .qbActions { margin-left: 0; }
 }

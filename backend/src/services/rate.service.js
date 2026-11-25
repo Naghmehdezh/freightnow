@@ -3,6 +3,7 @@ const { getCarriersForShipment, supportsShipment, getCarrier } = require('../car
 const { unavailableOptions, unavailableMessage, labelFor, OptionUnavailableError } = require('../carriers/accessorials');
 const { priceQuote, freightClass } = require('./pricingEngine.service');
 const { getActiveRuleSet } = require('./pricingRules.service');
+const { bothCurrencies } = require('../utils/currency');
 const fedexValidationMode = require('./fedexValidationMode');
 const { detectScope } = require('../utils/shipmentScope');
 const Quote = require('../models/Quote');
@@ -249,6 +250,7 @@ async function getAllRates(params, userId) {
     quoteId,
     quoteNumber,
     expiresAt: expiresAt?.toISOString(),
+    usdToCad: inputs.ruleSet.usdToCadRate || 1.4,
     rates: processedRates.map(r => ({
       quoteId,
       quoteRateId: r.quoteRateId || null,
@@ -257,6 +259,9 @@ async function getAllRates(params, userId) {
       serviceName: r.serviceName,
       displayRate: r.displayRate,
       currency: r.currency,
+      // The same price in both currencies at the quote's exchange rate (what the customer pays
+      // in whichever currency they choose).
+      prices: bothCurrencies(r.displayRate, r.currency, inputs.ruleSet.usdToCadRate),
       transitDays: r.transitDays,
       estimatedDelivery: r.deliveryDate,
       isLiveRate: r.isLive || false,
@@ -297,4 +302,4 @@ async function getSingleCarrierRate(carrierId, params) {
   }
 }
 
-module.exports = { getAllRates, getSingleCarrierRate, estimateFreightClass };
+module.exports = { getAllRates, getSingleCarrierRate, estimateFreightClass, buildPricingInputs, priceWithAccessorials };

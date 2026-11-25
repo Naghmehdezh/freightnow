@@ -44,11 +44,22 @@ function getFutureDate(daysAhead) {
   return d.toISOString().split('T')[0];
 }
 
+// DHL wants the pickup time as local time + the location's UTC offset
+// ("2026-11-06T10:00:00 GMT-05:00"). Without the offset it's read as GMT — 06:00 in Montreal,
+// before DHL's pickup window (error 5006).
+const ZONES = { QC: 'America/Toronto', ON: 'America/Toronto', BC: 'America/Vancouver', NY: 'America/New_York' };
+function utcOffset(region, date) {
+  const name = new Intl.DateTimeFormat('en-US', { timeZone: ZONES[region] || 'America/Toronto', timeZoneName: 'longOffset' })
+    .formatToParts(new Date(`${date}T12:00:00Z`)).find(p => p.type === 'timeZoneName')?.value || 'GMT';
+  const m = name.match(/GMT([+-]\d{2}):?(\d{2})?/);
+  return m ? `${m[1]}:${m[2] || '00'}` : '+00:00';
+}
+
 // ── Pickup request builders ───────────────────────────────────────
 
 function buildPickupRequest(tc) {
   return {
-    plannedPickupDateAndTime: `${tc.pickupDate}T${tc.pickupTime}`,
+    plannedPickupDateAndTime: `${tc.pickupDate}T${tc.pickupTime} GMT${utcOffset(tc.address.provinceCode, tc.pickupDate)}`,
     closeTime: tc.closeTime,
     location: tc.location || 'reception',
     locationType: tc.locationType || 'business',
@@ -104,24 +115,24 @@ const TEST_CASES = [
   {
     num: 2,
     id: 'Pickup_2',
-    description: 'Remote pickup in another city (Vancouver)',
+    description: 'Remote pickup in another country (New York, US)',
     pickupDate: getBusinessDaysAhead(3),
-    pickupTime: '09:00:00',
+    pickupTime: '10:00:00',
     closeTime: '16:00',
     address: {
-      postalCode: 'V6B 2W2',
-      cityName: 'VANCOUVER',
-      countryCode: 'CA',
-      provinceCode: 'BC',
-      addressLine1: '200 Burrard Street',
+      postalCode: '10001',
+      cityName: 'NEW YORK',
+      countryCode: 'US',
+      provinceCode: 'NY',
+      addressLine1: '350 5th Avenue',
     },
     contact: {
-      phone: '+16041234567',
-      companyName: 'Test Remote Pickup',
+      phone: '+12125550123',
+      companyName: 'Test Remote Pickup US',
       fullName: 'Remote Test',
       email: 'remote@iffcargo.com',
     },
-    instructions: 'Remote city pickup test - Vancouver',
+    instructions: 'Remote pickup in another country - New York',
     shouldCancel: false,
   },
   {
@@ -151,7 +162,7 @@ const TEST_CASES = [
     num: 4,
     id: 'Pickup_4',
     description: 'Create pickup for a future date',
-    pickupDate: getFutureDate(7),
+    pickupDate: getBusinessDaysAhead(5),
     pickupTime: '10:00:00',
     closeTime: '17:00',
     address: {
@@ -167,7 +178,7 @@ const TEST_CASES = [
       fullName: 'IFF Future Test',
       email: 'test@iffcargo.com',
     },
-    instructions: 'Future date pickup test - 7 days ahead',
+    instructions: 'Future date pickup test - 5 business days ahead',
     shouldCancel: false,
   },
 ];

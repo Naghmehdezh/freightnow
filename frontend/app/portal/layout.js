@@ -7,25 +7,44 @@ import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import s from './layout.module.css';
 
-const PAGE_TITLES = {
-  '/portal': 'Dashboard',
-  '/portal/quote': 'Get a Quote',
-  '/portal/shipments': 'My Shipments',
-  '/portal/track': 'Track Shipment',
-  '/portal/claims': 'Claims',
-  '/portal/profile': 'Profile',
-  '/portal/billing': 'Billing',
-  '/portal/admin/pricing': 'Pricing Admin',
-  '/portal/admin/spot-rates': 'Spot Rates',
-  '/portal/admin/guest-quotes': 'Guest Quote Requests',
-  '/portal/spot-rates': 'Spot-rate Requests',
+// Breadcrumb group, page title and a one-line description for each portal page.
+const PAGES = {
+  '/portal': { title: 'Dashboard', description: 'Recent shipments, open quotes and spending at a glance.' },
+  '/portal/quote': { group: 'Shipping', title: 'Get a quote', description: 'Compare carrier rates for a shipment and book the one you want.' },
+  '/portal/shipments': { group: 'Shipping', title: 'Shipments', description: 'Every booking, its carrier and where it is now.' },
+  '/portal/spot-rates': { group: 'Shipping', title: 'Spot-rate requests', description: 'Full truckload, air and ocean freight that IFF prices for you.' },
+  '/portal/track': { group: 'Shipping', title: 'Track a shipment', description: 'Look up an IFF or carrier tracking number.' },
+  '/portal/claims': { group: 'Shipping', title: 'Claims', description: 'Report loss, damage or delay and follow each claim.' },
+  '/portal/billing': { group: 'Account', title: 'Billing', description: 'Payments, invoices, balances and statements.' },
+  '/portal/profile': { group: 'Account', title: 'Profile', description: 'Your details, company and connected carrier accounts.' },
+  '/portal/admin/spot-rates': { group: 'IFF operations', title: 'Spot rates', description: 'Price or decline customer requests for full truckload, air and ocean.' },
+  '/portal/admin/guest-quotes': { group: 'IFF operations', title: 'Guest requests', description: 'Quote requests from visitors without an account.' },
+  '/portal/admin/adjustments': { group: 'IFF operations', title: 'Adjustments', description: 'Carrier re-weighs and re-classes, and what customers owe or get back.' },
+  '/portal/admin/accounts': { group: 'IFF operations', title: 'Accounts', description: 'Monthly-terms customers: credit limits, balances and statements.' },
+  '/portal/admin/pricing': { group: 'IFF operations', title: 'Pricing', description: 'Markup rules, quote margins, corrections and receivables.' },
 };
+
+const SIDEBAR_KEY = 'iff.sidebarCollapsed';
 
 export default function PortalLayout({ children }) {
   const pathname = usePathname();
   const router = useRouter();
   const { isAuthenticated, isLoading, loginWithRedirect } = useAuth0();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Remember the collapsed sidebar per browser.
+  useEffect(() => {
+    try { setCollapsed(localStorage.getItem(SIDEBAR_KEY) === '1'); } catch { /* storage unavailable */ }
+  }, []);
+  function toggleCollapsed() {
+    setCollapsed(c => {
+      try { localStorage.setItem(SIDEBAR_KEY, c ? '0' : '1'); } catch { /* storage unavailable */ }
+      return !c;
+    });
+  }
+  useEffect(() => { setNavOpen(false); }, [pathname]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -60,9 +79,7 @@ export default function PortalLayout({ children }) {
 
   if (isLoading || !isAuthenticated) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <p>Loading...</p>
-      </div>
+      <div className={s.loading} role="status">Loading your portal…</div>
     );
   }
 
@@ -73,22 +90,29 @@ export default function PortalLayout({ children }) {
 
   if (!onboardingChecked) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <p>Loading...</p>
-      </div>
+      <div className={s.loading} role="status">Loading your portal…</div>
     );
   }
 
-  const title = PAGE_TITLES[pathname] || 'Portal';
+  const page = PAGES[pathname] || { title: 'Portal' };
 
   return (
-    <div className={s.wrapper}>
-      <Sidebar />
+    <div className={`${s.wrapper} ${collapsed ? s.wrapperCollapsed : ''}`}>
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapse={toggleCollapsed}
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+      />
       <div className={s.main}>
-        <Topbar title={title} />
-        <div className={s.pageContent}>
+        <Topbar title={page.title} group={page.group} onOpenNav={() => setNavOpen(true)} />
+        <main className={s.pageContent}>
+          <div className={s.pageHeader}>
+            <h1 className={s.pageTitle}>{page.title}</h1>
+            {page.description && <p className={s.pageDescription}>{page.description}</p>}
+          </div>
           {children}
-        </div>
+        </main>
       </div>
     </div>
   );

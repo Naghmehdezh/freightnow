@@ -1,134 +1,115 @@
-.header {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--navy);
-  margin-bottom: 24px;
+/* Settings blocks: what the section is on the left, its fields on the right */
+.block {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  column-gap: 40px;
+  max-width: 1040px;
 }
+.block > * { grid-column: 2; }
+.block > .sectionHeader { grid-column: 1; grid-row: 1 / span 20; }
+
+.header { font-size: var(--fs-md); font-weight: 600; color: var(--ink); margin-bottom: 20px; }
 
 .sectionHeader {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.sectionTitle {
-  font-family: var(--display);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--navy);
-}
+.sectionTitle { font-size: var(--fs-md); font-weight: 600; color: var(--ink); }
+.sectionDesc { font-size: var(--fs-sm); color: var(--slate); line-height: 1.5; margin-bottom: 8px; }
 
 .btnEdit {
-  padding: 6px 14px;
-  background: transparent;
-  border: 1.5px solid var(--border);
-  border-radius: 6px;
-  font-family: var(--display);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--navy);
+  height: 30px;
+  padding: 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--ink);
   cursor: pointer;
-  transition: all .15s;
 }
+.btnEdit:hover { background: var(--sunken); }
 
-.btnEdit:hover {
-  border-color: var(--navy);
-  background: var(--off-white);
-}
-
-.readOnly {
-  background: var(--off-white);
-  color: var(--text2);
+/* Fields not being edited read as plain values */
+.readOnly,
+.readOnly:hover {
+  padding-left: 0 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: var(--ink) !important;
   cursor: default;
-  border-color: transparent;
 }
+.readOnly:focus-visible { box-shadow: var(--focus) !important; }
 
 .btnRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
 }
 
-.btnCancel {
-  height: 44px;
-  padding: 0 20px;
-  background: transparent;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  font-family: var(--display);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text2);
-  cursor: pointer;
-  transition: all .15s;
-}
-
-.btnCancel:hover {
-  border-color: var(--navy);
-  color: var(--navy);
-}
-
-.btnSave {
-  height: 44px;
-  padding: 0 28px;
-  background: var(--navy);
-  border: none;
-  border-radius: 8px;
-  font-family: var(--display);
-  font-size: 14px;
-  font-weight: 700;
-  color: #fff;
-  cursor: pointer;
-  transition: all .15s;
+.btnSave,
+.btnCancel,
+.btnDanger {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.btnSave:hover {
-  background: var(--navy-dark);
-}
-
-.btnSave:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-
-.btnDanger {
-  height: 40px;
-  padding: 0 20px;
-  background: transparent;
-  border: 1.5px solid var(--red);
-  border-radius: 8px;
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--red);
+  height: var(--h-md);
+  padding: 0 16px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-base);
+  font-weight: 500;
   cursor: pointer;
-  transition: all .15s;
-  margin-top: 20px;
+  white-space: nowrap;
 }
+.btnSave { background: var(--petrol); border: 1px solid var(--petrol); color: #fff; }
+.btnSave:hover { background: var(--petrol-700); }
+.btnSave:disabled { opacity: .5; cursor: not-allowed; }
+.btnCancel { background: var(--surface); border: 1px solid var(--line); color: var(--ink); }
+.btnCancel:hover { background: var(--sunken); }
+.btnDanger { margin-top: 16px; background: var(--surface); border: 1px solid var(--danger-line); color: var(--danger); }
+.btnDanger:hover { background: var(--danger-bg); }
 
-.btnDanger:hover {
-  background: var(--red-light);
-}
-
-.hint {
-  font-size: 13px;
-  color: var(--text3);
-  margin: 0;
-}
+.hint { margin: 0; font-size: var(--fs-base); color: var(--slate); padding-top: 2px; }
 
 .success {
-  background: var(--green-light);
-  color: var(--green);
-  font-size: 13px;
-  padding: 10px 14px;
-  border-radius: 8px;
+  max-width: 1040px;
   margin-bottom: 16px;
+  padding: 8px 12px;
+  background: var(--success-bg);
+  border: 1px solid var(--success-line);
+  border-left: 3px solid var(--success);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: #0f4f2a;
+}
+
+/* Connected carrier accounts */
+.connection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.connection:last-of-type { border-bottom: 0; }
+.connectionName { font-weight: 500; color: var(--ink); }
+.connStatus { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-size: var(--fs-sm); color: var(--slate); }
+.connStatus::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--mute); }
+.connOk::before { background: var(--success); }
+.connWait::before { background: #d08a12; }
+.connLocked { color: var(--danger); }
+.connLocked::before { background: var(--danger); }
+
+@media (max-width: 860px) {
+  .block { grid-template-columns: 1fr; }
+  .block > .sectionHeader { grid-column: 1; grid-row: auto; margin-bottom: 12px; }
+  .block > * { grid-column: 1; }
 }

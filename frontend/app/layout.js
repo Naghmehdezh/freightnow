@@ -3,6 +3,7 @@ import './globals.css';
 import { useRouter } from 'next/navigation';
 import { Auth0Provider } from '@auth0/auth0-react';
 import AuthBridge from '@/components/AuthBridge';
+import NumberGuard from '@/components/NumberGuard';
 
 export default function RootLayout({ children }) {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function RootLayout({ children }) {
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
       </head>
       <body>
         <Auth0Provider
@@ -29,6 +30,7 @@ export default function RootLayout({ children }) {
           cacheLocation="localstorage"
           onRedirectCallback={handleRedirectCallback}
         >
+          <NumberGuard />
           <AuthBridge>{children}</AuthBridge>
         </Auth0Provider>
       </body>

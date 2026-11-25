@@ -79,8 +79,8 @@ export default function FedexEulaViewer({ onReachedEnd, height = 360 }) {
         <span>{FEDEX_EULA_REVISION}</span>
         <span>
           {pageCount ? `Page ${currentPage} of ${pageCount}` : ''}
-          {pageCount && !reachedEnd ? ' · scroll to the end of the last page to continue' : ''}
-          {reachedEnd ? ' · end of agreement reached' : ''}
+          {pageCount && !reachedEnd ? '. Scroll to the end of the last page to continue.' : ''}
+          {reachedEnd ? '. End of agreement reached.' : ''}
         </span>
       </div>
     </div>

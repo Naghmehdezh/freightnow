@@ -49,27 +49,26 @@ export default function ClaimsPage() {
       <div className="section-card">
         <div className={s.header}>
           <div>
-            <div className={s.title}>Claims</div>
-            <div className={s.sub}>File and track damage, loss, or delay claims</div>
+            <div className={s.title}>Your claims</div>
+            <div className={s.sub}>{claims.length} {claims.length === 1 ? 'claim' : 'claims'} filed</div>
           </div>
-          <button className={s.btnNew} onClick={() => setShowForm(true)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New claim
+          <button type="button" className={s.btnNew} onClick={() => setShowForm(true)}>
+            File a claim
           </button>
         </div>
 
         <div className={s.tableWrap}>
           <table>
-            <thead><tr><th>Claim #</th><th>Shipment</th><th>Type</th><th>Amount</th><th>Filed</th><th>Status</th></tr></thead>
+            <thead><tr><th>Claim</th><th>Shipment</th><th>Type</th><th className={s.right}>Amount</th><th>Filed</th><th>Status</th></tr></thead>
             <tbody>
               {claims.map((claim, i) => (
                 <tr key={i}>
-                  <td>{claim.id}</td>
-                  <td>{claim.shipmentId}</td>
+                  <td className="ref">{claim.id}</td>
+                  <td className="ref">{claim.shipmentId}</td>
                   <td>{claim.type}</td>
-                  <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{claim.amount}</td>
+                  <td className={s.money}>{claim.amount}</td>
                   <td>{claim.filed}</td>
-                  <td><span className={`${s.badge} ${getBadgeClass(claim.status)}`}>{claim.status}</span></td>
+                  <td><span className={`${s.badge} ${getBadgeClass(claim.status)}`}>{claim.status ? `${claim.status[0].toUpperCase()}${claim.status.slice(1).replace('_', ' ')}` : ''}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -79,16 +78,16 @@ export default function ClaimsPage() {
 
       {showForm && (
         <div className={s.formOverlay} onClick={() => setShowForm(false)}>
-          <form className={s.formCard} onClick={e => e.stopPropagation()} onSubmit={handleSubmit}>
-            <div className={s.formTitle}>File a new claim</div>
-            <div className="field"><label>Shipment / Tracking #</label><input placeholder="IFF-2026-XXXXX" value={formData.shipmentId} onChange={e => setFormData({ ...formData, shipmentId: e.target.value })} required /></div>
+          <form className={s.formCard} onClick={e => e.stopPropagation()} onSubmit={handleSubmit} role="dialog" aria-modal="true" aria-labelledby="claim-form-title">
+            <div className={s.formTitle} id="claim-form-title">File a claim</div>
+            <div className="field"><label>Tracking number</label><input placeholder="IFF-2026-XXXXX" value={formData.shipmentId} onChange={e => setFormData({ ...formData, shipmentId: e.target.value })} required /></div>
             <div className="grid2">
               <div className="field"><label>Claim type</label>
                 <select value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
                   <option>Damage</option><option>Lost package</option><option>Delay</option><option>Other</option>
                 </select>
               </div>
-              <div className="field"><label>Claim amount (CAD)</label><input type="number" placeholder="0.00" value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} required /></div>
+              <div className="field"><label>Claim amount (CAD)</label><input type="number" min="0" step="0.01" placeholder="0.00" value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} required /></div>
             </div>
             <div className="field"><label>Description</label><textarea rows="3" placeholder="Describe what happened…" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} required /></div>
             <div className={s.formActions}>

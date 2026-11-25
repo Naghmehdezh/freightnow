@@ -32,6 +32,13 @@ function downloadLabelFromBase64(encodedLabel, docType, trackingNumber) {
   URL.revokeObjectURL(url);
 }
 
+// What the customer pays for a booking, in the currency they chose (falls back to the carrier price).
+function paidLabel(b) {
+  const amount = b.chargeAmount ?? b.sellRate;
+  const cur = b.chargeCurrency || b.currency;
+  return amount != null ? `${cur === 'USD' ? 'US$' : 'C$'}${Number(amount).toFixed(2)}` : '—';
+}
+
 export default function ShipmentsPage() {
   const [shipments, setShipments] = useState(DEMO_SHIPMENTS);
   const [filter, setFilter] = useState('all');
@@ -72,6 +79,8 @@ export default function ShipmentsPage() {
   });
 
   function getBadgeClass(ship) {
+    if (ship.booking?.status === 'awaiting_payment') return s.badgePending;
+    if (ship.status === 'cancelled') return s.badgeException;
     if (ship.status === 'delivered') return s.badgeDelivered;
     if (ship.status === 'in_transit') return s.badgeTransit;
     if (ship.status === 'pending') return ship.pickupStatus === 'to_arrange' ? s.badgeException : s.badgePending;
@@ -80,50 +89,66 @@ export default function ShipmentsPage() {
 
   // Not picked up yet: say whether the carrier confirmed the pickup or IFF still has to book it.
   function getBadgeLabel(ship) {
-    if (ship.status === 'delivered') return '● Delivered';
-    if (ship.status === 'in_transit') return '↦ In transit';
+    if (ship.booking?.status === 'awaiting_payment') return 'Awaiting payment';
+    if (ship.status === 'cancelled') return 'Cancelled, not paid';
+    if (ship.status === 'delivered') return 'Delivered';
+    if (ship.status === 'in_transit') return 'In transit';
     if (ship.status === 'pending') {
-      if (ship.pickupStatus === 'scheduled') return '○ Awaiting pickup';
-      if (ship.pickupStatus === 'to_arrange') return '! Pickup to be arranged';
-      return '○ Booked';
+      if (ship.pickupStatus === 'scheduled') return 'Awaiting pickup';
+      if (ship.pickupStatus === 'to_arrange') return 'Pickup to be arranged';
+      return 'Booked';
     }
-    return '! Exception';
+    return 'Exception';
   }
 
   return (
     <div className="section-card">
       <div className={s.filters}>
-        {['all', 'in_transit', 'delivered', 'pending'].map(f => (
-          <button key={f} className={`${s.filterBtn} ${filter === f ? s.filterBtnActive : ''}`} onClick={() => setFilter(f)}>
-            {f === 'all' ? 'All' : f === 'in_transit' ? 'In transit' : f === 'delivered' ? 'Delivered' : 'Not picked up yet'}
-          </button>
-        ))}
-        <input className={s.searchInput} placeholder="Search tracking, carrier, route…" value={search} onChange={e => setSearch(e.target.value)} />
+        <div className={s.filterGroup} role="group" aria-label="Filter by status">
+          {['all', 'in_transit', 'delivered', 'pending'].map(f => {
+            const count = f === 'all' ? shipments.length : shipments.filter(sh => sh.status === f).length;
+            return (
+              <button key={f} type="button" aria-pressed={filter === f} className={`${s.filterBtn} ${filter === f ? s.filterBtnActive : ''}`} onClick={() => setFilter(f)}>
+                {f === 'all' ? 'All' : f === 'in_transit' ? 'In transit' : f === 'delivered' ? 'Delivered' : 'Not picked up'}
+                <span className={s.filterCount}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+        <input className={s.searchInput} type="search" aria-label="Search shipments" placeholder="Search booking, tracking, carrier or city" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       <div className={s.tableWrap}>
         <table>
           <thead>
-            <tr><th>Booking #</th><th>Tracking #</th><th>Route</th><th>Carrier</th><th>Type</th><th>Weight</th><th>Booked</th><th>Delivery</th><th>Cost</th><th>Status</th><th></th></tr>
+            <tr><th>Booking</th><th>Tracking</th><th>Route</th><th>Carrier</th><th>Type</th><th className={s.right}>Weight (lb)</th><th>Booked</th><th>Delivery</th><th className={s.right}>Cost</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan="11" style={{ textAlign: 'center', padding: '40px 14px', color: 'var(--text3)' }}>No shipments found</td></tr>
+              <tr><td colSpan="11" className={s.empty}>{shipments.length ? 'No shipments match these filters.' : 'No shipments yet. Book a quote and it will appear here.'}</td></tr>
             )}
             {filtered.map((ship, i) => (
               <Fragment key={ship.id || ship._id || i}>
                 <tr>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>{ship.bookingNumber || ship.booking?.bookingNumber || '—'}</td>
-                  <td>{ship.tracking || ship.trackingNumber}</td>
+                  <td className="ref">{ship.bookingNumber || ship.booking?.bookingNumber || '—'}</td>
+                  <td className="ref">{ship.tracking || ship.trackingNumber}</td>
                   <td>{ship.route || `${ship.originCity || ''} → ${ship.destCity || ''}`}</td>
                   <td>{ship.carrier || ship.carrierName}</td>
                   <td>{ship.type || ship.shipmentType}</td>
-                  <td>{ship.weight ? `${ship.weight}` : '—'}</td>
+                  <td className={s.num}>{ship.weight ? `${ship.weight}` : '—'}</td>
                   <td>{ship.booked || ship.bookedAt?.split('T')[0]}</td>
                   <td>{ship.delivery || ship.estimatedDelivery?.split('T')[0] || '—'}</td>
-                  <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{ship.cost || (ship.booking?.sellRate ? `${ship.booking.currency === 'USD' ? 'US$' : 'C$'}${ship.booking.sellRate.toFixed(2)}` : '—')}</td>
-                  <td><span className={`${s.badge} ${getBadgeClass(ship)}`}>{getBadgeLabel(ship)}</span></td>
-                  <td><button className={s.btnAction} onClick={() => setExpandedRow(expandedRow === i ? null : i)}>Details</button></td>
+                  <td className={s.money}>{ship.cost || (ship.booking ? paidLabel(ship.booking) : '—')}</td>
+                  <td>
+                    <span className={`${s.badge} ${getBadgeClass(ship)}`}>{getBadgeLabel(ship)}</span>
+                    {ship.booking?.status === 'awaiting_payment' && ship.booking.qbInvoiceLink && !/developer\.intuit\.com\/comingSoon/.test(ship.booking.qbInvoiceLink) && (
+                      <div className={s.subNote}>
+                        <a href={ship.booking.qbInvoiceLink} target="_blank" rel="noopener noreferrer">Pay now</a>
+                        {ship.booking.payBy && <>, by {new Date(ship.booking.payBy).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}</>}
+                      </div>
+                    )}
+                  </td>
+                  <td className={s.right}><button type="button" className={s.btnAction} aria-expanded={expandedRow === i} onClick={() => setExpandedRow(expandedRow === i ? null : i)}>{expandedRow === i ? 'Hide' : 'Details'}</button></td>
                 </tr>
                 {expandedRow === i && (
                   <tr className={s.detailRow}>
@@ -131,20 +156,20 @@ export default function ShipmentsPage() {
                       <div className={s.detailInner}>
                         <div><div className={s.detailLabel}>Origin</div><div className={s.detailValue}>{ship.origin || `${ship.originCity || ''}, ${ship.originPostal || ''}`}</div></div>
                         <div><div className={s.detailLabel}>Destination</div><div className={s.detailValue}>{ship.dest || `${ship.destCity || ''}, ${ship.destPostal || ''}`}</div></div>
-                        <div><div className={s.detailLabel}>Pieces</div><div className={s.detailValue}>{ship.pieces || ship.pieces}</div><div className={s.detailSub}>{ship.weight ? `${ship.weight} lbs` : '—'}</div></div>
+                        <div><div className={s.detailLabel}>Pieces</div><div className={s.detailValue}>{ship.pieces || ship.pieces}</div><div className={s.detailSub}>{ship.weight ? `${ship.weight} lb` : '—'}</div></div>
                         <div><div className={s.detailLabel}>Service</div><div className={s.detailValue}>{ship.service || ship.serviceName}</div><div className={s.detailSub}>{ship.carrier || ship.carrierName}</div></div>
-                        <div><div className={s.detailLabel}>Cost</div><div className={s.detailValue}>{ship.cost || (ship.booking?.sellRate ? `${ship.booking.currency === 'USD' ? 'US$' : 'C$'}${ship.booking.sellRate.toFixed(2)}` : '—')}</div></div>
+                        <div><div className={s.detailLabel}>Cost</div><div className={s.detailValue}>{ship.cost || (ship.booking ? paidLabel(ship.booking) : '—')}</div></div>
                         <div><div className={s.detailLabel}>Booked</div><div className={s.detailValue}>{ship.booked || ship.bookedAt?.split('T')[0]}</div></div>
                         <div><div className={s.detailLabel}>Est. delivery</div><div className={s.detailValue}>{ship.delivery || ship.estimatedDelivery?.split('T')[0] || '—'}</div></div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                          <Link href={`/portal/track?id=${encodeURIComponent(ship.tracking || ship.trackingNumber)}`} className={s.btnTrack}>Track &rarr;</Link>
+                        <div className={s.detailActions}>
+                          <Link href={`/portal/track?id=${encodeURIComponent(ship.tracking || ship.trackingNumber)}`} className={s.btnTrack}>Track shipment</Link>
                           {(ship.labelDocType || ship.labelBase64) && (
                             <button
                               className={s.btnDownload}
                               onClick={() => handleDownloadLabel(ship._id || ship.id)}
                               disabled={labelLoading[ship._id || ship.id]}
                             >
-                              {labelLoading[ship._id || ship.id] ? 'Downloading…' : `Download Label (${ship.labelDocType || 'PDF'})`}
+                              {labelLoading[ship._id || ship.id] ? 'Downloading…' : `Download label (${ship.labelDocType || 'PDF'})`}
                             </button>
                           )}
                         </div>
